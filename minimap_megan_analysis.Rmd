@@ -1,0 +1,275 @@
+---
+title: "minimap megan analysis"
+output: html_document
+date: "2025-05-05"
+---
+
+```{r}
+library(ggplot2)
+library(ggrepel)
+library(tidyr)
+library(dplyr)
+library(vroom)
+library(stringr)
+library(vegan)
+library(patchwork)
+library(purrr)
+library(compositions)
+library(tibble)
+library(stringr)
+```
+
+### Load data, merge parts and split lineage column into "kingdom","phylum","class","order","family","genus","species","strains"
+```{r}
+data_dir <- "/cwork/qd33/pipeline_result/taxonomy_profiling/protocol_modification/minimap_megan_9"
+topN <- 35 
+
+all_files <- list.files(
+  data_dir,
+  pattern = "\\.diamond_megan\\.mpa\\.filtered\\.txt$",
+  full.names = TRUE
+)
+
+sample_id <- basename(all_files) %>%
+  str_remove("\\.diamond_megan\\.mpa\\.filtered\\.txt$")
+
+samples_df <- tibble(file_path = all_files, sample_id = sample_id)
+
+taxonomy_ranks <- c("kingdom","phylum","class","order","family","genus","species","strains")
+
+result_tbl <- samples_df %>%
+  mutate(
+    data = purrr::map2(
+      file_path, sample_id,
+      ~ vroom::vroom(.x,
+                     delim = "\t",
+                     col_names = FALSE,
+                     show_col_types = FALSE) %>%
+        purrr::set_names(c("lineage","count")) %>%   
+        dplyr::mutate(
+          count     = as.numeric(count),
+          sample_id = .y        
+        )
+    )
+  ) %>%
+  dplyr::select(data) %>%
+  tidyr::unnest(data) %>%
+  dplyr::mutate(
+    kingdom = stringr::str_extract(lineage, "(?<=k__)[^|]+"),
+    phylum  = stringr::str_extract(lineage, "(?<=p__)[^|]+"),
+    class   = stringr::str_extract(lineage, "(?<=c__)[^|]+"),
+    order   = stringr::str_extract(lineage, "(?<=o__)[^|]+"),
+    family  = stringr::str_extract(lineage, "(?<=f__)[^|]+"),
+    genus   = stringr::str_extract(lineage, "(?<=g__)[^|]+"),
+    species = stringr::str_extract(lineage, "(?<=s__)[^|]+"),
+    strains = stringr::str_extract(lineage, "(?<=ss__)[^|]+"),
+    sample_id = as.character(sample_id),
+    species   = stringr::str_squish(as.character(species))
+  ) %>%
+  dplyr::select(sample_id, lineage, dplyr::all_of(taxonomy_ranks), count)
+
+```
+
+
+
+
+
+### Draw relative abundance plot
+```{r}
+species_tbl <- result_tbl %>%
+  filter(!is.na(species),
+         !stringr::str_detect(lineage, "\\|ss__")) %>%
+  group_by(sample_id, species) %>%
+  summarise(count = sum(count), .groups = "drop")
+
+species_rel <- species_tbl %>%
+  group_by(sample_id) %>%
+  mutate(abundance = count / sum(count)) %>%
+  ungroup()
+
+top_species <- species_rel %>%
+  group_by(species) %>%
+  summarise(mean_ab = mean(abundance), .groups = "drop") %>%
+  arrange(desc(mean_ab)) %>%
+  slice_head(n = topN) %>%
+  pull(species)
+
+species_levels <- c(top_species, "Others")
+
+sample_order_top_down <- c("102K","LMD","PhX","NC","0")
+sample_s_ids <- paste0(sample_order_top_down, "_s")
+sample_p_ids <- paste0(sample_order_top_down, "_p")
+
+plot_df <- species_rel %>%
+  filter(sample_id %in% c(sample_s_ids, sample_p_ids)) %>%
+  mutate(
+    batch = if_else(stringr::str_detect(sample_id, "_s$"),
+                    "PLP batch", "Standard batch"),
+    sample_base = stringr::str_remove(sample_id, "_[ps]$")
+  )
+
+plot_df2 <- plot_df %>%
+  mutate(
+    species = stringr::str_squish(as.character(species)),
+    species = if_else(species %in% top_species, species, "Others")
+  ) %>%
+  group_by(batch, sample_base, species) %>%
+  summarise(abundance = sum(abundance), .groups = "drop") %>%
+  mutate(
+    species     = factor(species, levels = species_levels),
+    sample_base = factor(sample_base, levels = rev(sample_order_top_down)),
+    batch       = factor(batch, levels = c("PLP batch","Standard batch"))
+  )
+
+
+full_palette <- c(
+  "#E16B8C","#89916B","#E69F00","#56B4E9","#986DB2","#5DAC81",
+  "#8D742A","#0B346E","#F7C242","#D0104C","#622954","#FEDFE1",
+  "#F05E1C","#43341B","#BEC23F","#66BAB7","#7B90D2","#FF9CA0",
+  "#90E0EF","#E63946","#A63A50","#9D0208","#D8A47F","#0077B6",
+  "#64363C","#006284","#8F5A3C","#E0AFFF","#F77F00","#0096C7",
+  "#FAF0CA","#D62828","#90B44B","#4E4F97","#C1328E","#999999"
+)
+
+if (length(full_palette) < length(species_levels)) {
+  full_palette <- grDevices::colorRampPalette(full_palette)(length(species_levels))
+}
+my_colors_named <- setNames(full_palette[seq_along(species_levels)],
+                            species_levels)
+sample_order_top_down <- c("102K", "LMD", "PhX", "NC", "0")
+sample_label_map <- c(
+  "102K" = "p-trap water sample",
+  "LMD"  = "DCS lambda",
+  "PhX"  = "PhiX",
+  "NC"   = "water blank",
+  "0"    = "empty blank"
+)
+
+plot_one_batch <- function(dat, show_legend = TRUE) {
+  limits_vec <- rev(sample_order_top_down) 
+
+  p <- ggplot(dat, aes(x = sample_base, y = abundance, fill = species)) +
+    geom_col(position = "fill") +
+    coord_flip() +
+    scale_x_discrete(
+      drop   = FALSE,
+      limits = limits_vec,
+      labels = sample_label_map[limits_vec]
+    ) +
+    scale_fill_manual(
+      values = my_colors_named,
+      limits = species_levels,
+      breaks = species_levels,
+      drop   = FALSE,
+      name   = "Species"
+    ) +
+    labs(
+      x = NULL,
+      y = "Relative abundance"
+    ) +
+    theme_bw(base_size = 10) +
+    theme(
+      panel.grid       = element_blank(),
+      axis.text.y      = element_text(size = 9),
+      legend.title     = element_text(size = 9),
+      legend.text      = element_text(size = 8),
+      legend.key.height = unit(0.35, "lines")
+    ) +
+    guides(fill = guide_legend(
+      ncol      = 1,            
+      byrow     = TRUE,
+      keywidth  = unit(0.6, "lines"),
+      keyheight = unit(0.35, "lines")
+    ))
+
+  if (!show_legend) {
+    p <- p + theme(legend.position = "none")
+  } else {
+    p <- p + theme(legend.position = "right")
+  }
+
+  p
+}
+```
+
+
+```{r fig.width=10, fig.height=5}
+df_PLP      <- dplyr::filter(plot_df2, batch == "PLP batch")
+df_Standard <- dplyr::filter(plot_df2, batch == "Standard batch")
+
+p_A_full <- plot_one_batch(df_Standard, show_legend = TRUE) +
+  theme(
+    legend.position   = "right",
+    legend.title      = element_text(size = 10),
+    legend.text       = element_text(size = 9),
+    legend.key.height = unit(0.55, "lines"),
+    legend.key.width  = unit(0.55, "lines")
+  ) +
+  guides(fill = guide_legend(
+    ncol      = 1,
+    byrow     = TRUE,
+    keyheight = unit(0.55, "lines"),
+    keywidth  = unit(0.55, "lines")
+  ))
+
+legend_grob <- cowplot::get_legend(p_A_full)
+legend_plot <- cowplot::ggdraw(legend_grob) 
+
+p_A <- p_A_full + theme(legend.position = "none")
+p_B <- plot_one_batch(df_PLP, show_legend = FALSE)
+
+combined <- cowplot::plot_grid(
+  p_A, p_B, legend_plot,
+  nrow       = 1,
+  rel_widths = c(1, 1, 0.65),    
+  labels     = c("A", "B", "")    
+)
+
+combined  
+```
+
+
+
+### Species-level read counts
+```{r}
+sample_label_levels <- c(
+  "p-trap water sample",  # 102K
+  "DCS lambda",           # LMD
+  "PhiX",                 # PhX
+  "water blank",          # NC
+  "empty blank"           # 0
+)
+
+species_level_stats <- result_tbl %>%
+  mutate(
+    sample = stringr::str_remove(sample_id, "_[sp]$"),
+    batch  = if_else(stringr::str_detect(sample_id, "_s$"), "PLP", "Standard")
+  ) %>%
+  filter(sample %in% c("102K","LMD","PhX","NC","0")) %>%
+  group_by(sample, batch) %>%
+  summarise(
+    total_reads = sum(count[!stringr::str_detect(lineage, "\\|")], na.rm = TRUE),
+    species_level_reads = sum(
+      count[!is.na(species) & !stringr::str_detect(lineage, "\\|ss__")],
+      na.rm = TRUE
+    ),
+    species_level_pct = species_level_reads / total_reads,
+    .groups = "drop"
+  ) %>%
+  mutate(
+    sample = dplyr::recode(
+      sample,
+      "102K" = "p-trap water sample",
+      "LMD"  = "DCS lambda",
+      "PhX"  = "PhiX",
+      "NC"   = "water blank",
+      "0"    = "empty blank"
+    ),
+    sample = factor(sample, levels = sample_label_levels)
+  ) %>%
+  arrange(sample, batch)
+
+
+species_level_stats
+```
+
