@@ -1,0 +1,628 @@
+---
+title: "result analysis"
+output: html_document
+date: "2025-10-27"
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+# ===== Libraries =====
+library(readr)     # read_tsv, write_csv
+library(dplyr)     # mutate, group_by, summarise, arrange, bind_rows, across
+library(tidyr)     # complete, pivot_wider, separate_rows
+library(tibble)    # tribble, tibble
+library(knitr)     # kable (pretty table)
+library(kableExtra)
+library(ggplot2)
+library(dplyr)
+
+knitr::opts_chunk$set(comment = "#>", fig.width = 9, fig.height = 4.8, dpi = 120)
+```
+
+```{r user_settings}
+# ===== 1) User settings =====
+
+input_dirs <- c(
+  "/work/qd33/pipeline_result/minimap2/20251018_MPI_LCO_3ng",
+  "/work/qd33/pipeline_result/minimap2/20251019_LCI_PMO_3ng",
+  "/work/qd33/pipeline_result/minimap2/20251029_LMI_CPO_3ng",
+  "/work/qd33/pipeline_result/minimap2/20251020_MLI_PCO_20ng",
+  "/work/qd33/pipeline_result/minimap2/20251023_CPI_LMO_20ng",
+  "/work/qd33/pipeline_result/minimap2/20251026_PMI_LCO_20ng"
+)
+
+
+mapping_tbl <- tribble(
+  ~prefix,      ~species,
+  "ATCC_23114", "Mycoplasma hominis",
+  "ATCC_8482",  "Phocaeicola vulgatus",
+  "ATCC_6940",  "Corynebacterium striatum",
+  "DCS_Lambda", "DCS_Lambda",
+  "unmapped",   "unmapped"
+)
+
+output_species_order <- c(
+  "DCS_Lambda",
+  "Mycoplasma hominis",
+  "Phocaeicola vulgatus",
+  "Corynebacterium striatum",
+  "unmapped"
+)
+
+WRITE_OUTPUTS <- FALSE
+
+# Unknown prefixes handling
+KEEP_UNKNOWN_PREFIXES <- FALSE
+UNKNOWN_LABEL <- "other"   
+
+expected_map <- c(
+  M="Mycoplasma hominis",
+  P="Phocaeicola vulgatus",
+  C="Corynebacterium striatum",
+  L="DCS_Lambda"
+)
+
+
+method_map <- tibble::tribble(
+  ~batch_dir,                      ~sample, ~method,
+  "20251018_MPI_LCO_3ng",          "M",     "SFB",
+  "20251018_MPI_LCO_3ng",          "P",     "SFB",
+  "20251018_MPI_LCO_3ng",          "L",     "PLP",
+  "20251018_MPI_LCO_3ng",          "C",     "PLP",
+  "20251018_MPI_LCO_3ng",          "I",     "SFB_Blank",
+  "20251018_MPI_LCO_3ng",          "O",     "PLP_Blank",
+
+  "20251019_LCI_PMO_3ng",          "L",     "SFB",
+  "20251019_LCI_PMO_3ng",          "C",     "SFB",
+  "20251019_LCI_PMO_3ng",          "P",     "SFB+PLP",
+  "20251019_LCI_PMO_3ng",          "M",     "SFB+PLP",
+  "20251019_LCI_PMO_3ng",          "I",     "SFB_Blank",
+  "20251019_LCI_PMO_3ng",          "O",     "SFB+PLP_Blank",
+  
+  "20251029_LMI_CPO_3ng",          "L",     "Standard",
+  "20251029_LMI_CPO_3ng",          "C",     "PLP",
+  "20251029_LMI_CPO_3ng",          "P",     "PLP",
+  "20251029_LMI_CPO_3ng",          "M",     "Standard",
+  "20251029_LMI_CPO_3ng",          "I",     "Standard_Blank",
+  "20251029_LMI_CPO_3ng",          "O",     "PLP_Blank",
+
+  "20251020_MLI_PCO_20ng",         "M",     "SFB",
+  "20251020_MLI_PCO_20ng",         "L",     "SFB",
+  "20251020_MLI_PCO_20ng",         "P",     "SFB+PLP",
+  "20251020_MLI_PCO_20ng",         "C",     "SFB+PLP",
+  "20251020_MLI_PCO_20ng",         "I",     "SFB_Blank",
+  "20251020_MLI_PCO_20ng",         "O",     "SFB+PLP_Blank",
+
+  "20251023_CPI_LMO_20ng",         "C",     "SFB",
+  "20251023_CPI_LMO_20ng",         "P",     "SFB",
+  "20251023_CPI_LMO_20ng",         "L",     "PLP",
+  "20251023_CPI_LMO_20ng",         "M",     "PLP",
+  "20251023_CPI_LMO_20ng",         "I",     "SFB_Blank",
+  "20251023_CPI_LMO_20ng",         "O",     "PLP_Blank",
+
+  "20251026_PMI_LCO_20ng",         "M",     "Standard",
+  "20251026_PMI_LCO_20ng",         "P",     "Standard",
+  "20251026_PMI_LCO_20ng",         "L",     "PLP",
+  "20251026_PMI_LCO_20ng",         "C",     "PLP",
+  "20251026_PMI_LCO_20ng",         "I",     "Standard_Blank",
+  "20251026_PMI_LCO_20ng",         "O",     "PLP_Blank"
+)
+
+IGNORE_SAMPLES_REGEX <- "(?i)unclassified"
+```
+
+```{r helpers, message=FALSE, warning=FALSE}
+# ===== 2) Helpers (no plots) =====
+
+collect_idxstats_files <- function(indir) {
+  if (!dir.exists(indir)) stop("Directory not found: ", indir)
+  list.files(indir, pattern = "\\.(tsv(\\.gz)?|idxstats)$", full.names = TRUE, recursive = FALSE)
+}
+
+.clean_sample <- function(x) {
+  vapply(x, function(base) {
+    if (is.na(base)) return(NA_character_)
+    base <- basename(base)
+    base <- sub("\\.(?:tsv(?:\\.gz)?|idxstats)$", "", base, perl = TRUE)
+    if (grepl("_[A-Z]$", base, perl = TRUE)) {
+      return(sub("^.*_([A-Z])$", "\\1", base, perl = TRUE))
+    }
+    m <- regexpr("([A-Z])(?=[^A-Z]*$)", base, perl = TRUE)
+    if (m[1] > 0) regmatches(base, m) else base
+  }, character(1))
+}
+
+prefix_to_species <- function(x, map_tbl, keep_unknown = FALSE, unknown_lbl = "other") {
+  idx <- match(x, map_tbl$prefix)
+  sp  <- map_tbl$species[idx]
+  if (keep_unknown) ifelse(is.na(sp), x, sp) else sp
+}
+
+read_one_idxstats <- function(path) {
+  df <- readr::read_tsv(
+    file = path,
+    col_names = c("ref","len","mapped","unmapped"),
+    col_types = readr::cols(
+      ref = readr::col_character(),
+      len = readr::col_double(),
+      mapped = readr::col_double(),
+      unmapped = readr::col_double()
+    ),
+    progress = FALSE
+  )
+
+  df$prefix <- ifelse(
+    df$ref == "*", "unmapped",
+    ifelse(grepl("^ATCC_\\d+", df$ref),
+           sub("^(ATCC_\\d+).*", "\\1", df$ref),
+           ifelse(grepl("^DCS_Lambda", df$ref), "DCS_Lambda", "other"))
+  )
+
+  mapped_tbl <- df %>%
+    dplyr::filter(prefix != "unmapped") %>%
+    dplyr::group_by(prefix) %>%
+    dplyr::summarise(value = sum(mapped, na.rm = TRUE), .groups = "drop")
+
+  unmapped_tbl <- df %>%
+    dplyr::filter(prefix == "unmapped") %>%
+    dplyr::summarise(prefix = "unmapped", value = sum(unmapped, na.rm = TRUE), .groups = "drop")
+
+  dplyr::bind_rows(mapped_tbl, unmapped_tbl) %>%
+    dplyr::mutate(sample = .clean_sample(path)) %>%
+    dplyr::select(sample, prefix, value)
+}
+
+process_one_dir <- function(indir,
+                            map_tbl,
+                            species_order = character(),
+                            keep_unknown = FALSE,
+                            unknown_lbl = "other") {
+  files <- collect_idxstats_files(indir)
+  if (!length(files)) { warning("No idxstats files in: ", indir); return(NULL) }
+
+  long_prefix <- dplyr::bind_rows(lapply(files, read_one_idxstats)) %>%
+    dplyr::mutate(sample = .clean_sample(sample))
+
+  long_species <- long_prefix %>%
+    dplyr::mutate(species = prefix_to_species(prefix, map_tbl, keep_unknown, unknown_lbl)) %>%
+    { if (!keep_unknown) dplyr::filter(., !is.na(species)) else . } %>%
+    dplyr::group_by(sample, species) %>%
+    dplyr::summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
+
+  species_levels <- if (length(species_order)) {
+    species_order
+  } else {
+    uniq <- sort(unique(long_species$species))
+    c(setdiff(uniq, "unmapped"), intersect("unmapped", uniq))
+  }
+
+  long_completed <- long_species %>%
+    tidyr::complete(sample, species = factor(species_levels, levels = species_levels),
+                    fill = list(value = 0)) %>%
+    dplyr::arrange(sample, species)
+
+  wide_species <- long_completed %>%
+    tidyr::pivot_wider(names_from = species, values_from = value) %>%
+    dplyr::arrange(sample)
+
+  totals_all <- long_completed %>%
+    dplyr::group_by(sample) %>%
+    dplyr::summarise(total_all = sum(value), .groups = "drop")
+
+  totals_mapped <- long_completed %>%
+    dplyr::filter(species != "unmapped") %>%
+    dplyr::group_by(sample) %>%
+    dplyr::summarise(total_mapped = sum(value), .groups = "drop")
+
+  unmapped_pct <- long_completed %>%
+    dplyr::filter(species == "unmapped") %>%
+    dplyr::left_join(totals_all, by = "sample") %>%
+    dplyr::mutate(unmapped_pct_total = ifelse(total_all > 0, 100 * value / total_all, NA_real_)) %>%
+    dplyr::select(sample, unmapped_pct_total)
+
+  mapped_pct_long <- long_completed %>%
+    dplyr::filter(species != "unmapped") %>%
+    dplyr::left_join(totals_mapped, by = "sample") %>%
+    dplyr::mutate(pct_of_mapped = ifelse(total_mapped > 0, 100 * value / total_mapped, 0)) %>%
+    dplyr::select(sample, species, pct_of_mapped)
+
+  wide_percent_mapped_only <- mapped_pct_long %>%
+    tidyr::pivot_wider(names_from = species, values_from = pct_of_mapped,
+                       names_glue = "{species}__pct_of_mapped") %>%
+    dplyr::arrange(sample)
+
+  percent_combined <- wide_percent_mapped_only %>%
+    dplyr::left_join(unmapped_pct, by = "sample") %>%
+    dplyr::relocate(sample, unmapped_pct_total)
+
+  list(
+    long = long_completed,
+    wide = wide_species,
+    wide_percent_mapped_only = wide_percent_mapped_only,
+    percent_combined = percent_combined
+  )
+}
+```
+
+```{r run, message=TRUE}
+# ===== 3) Run (write per-dir + master) =====
+stopifnot(is.data.frame(mapping_tbl), all(c("prefix","species") %in% names(mapping_tbl)))
+stopifnot(length(input_dirs) >= 1)
+
+results <- list()
+master_long <- NULL
+master_wide <- NULL
+master_percent_mapped_only <- NULL
+master_percent_combined <- NULL
+
+for (d in input_dirs) {
+  cat("\n### Processing:", d, "\n")
+  res <- process_one_dir(
+    indir         = d,
+    map_tbl       = mapping_tbl,
+    species_order = output_species_order,
+    keep_unknown  = KEEP_UNKNOWN_PREFIXES,
+    unknown_lbl   = UNKNOWN_LABEL
+  )
+  if (is.null(res)) next
+
+  if (isTRUE(WRITE_OUTPUTS)) {
+    dir_tag   <- basename(normalizePath(d))
+    out_long   <- file.path(d, paste0(dir_tag, "_combined_idxstats_long.csv"))
+    out_wide   <- file.path(d, paste0(dir_tag, "_combined_idxstats_wide.csv"))
+    out_mapPct <- file.path(d, paste0(dir_tag, "_combined_idxstats_wide_percent_mapped_only.csv"))
+    out_combo  <- file.path(d, paste0(dir_tag, "_combined_idxstats_percent_combined.csv"))
+
+    readr::write_csv(res$long,                       out_long)
+    readr::write_csv(res$wide,                       out_wide)
+    readr::write_csv(res$wide_percent_mapped_only,   out_mapPct)
+    readr::write_csv(res$percent_combined,           out_combo)
+
+    cat("→", out_wide,   "\n")
+    cat("→", out_mapPct, "\n")
+    cat("→", out_combo,  "\n")
+    cat("→", out_long,   "\n")
+  }
+
+  dir_tag <- basename(normalizePath(d))
+  res$long                     <- dplyr::mutate(res$long,                     batch_dir = dir_tag, .before = 1)
+  res$wide                     <- dplyr::mutate(res$wide,                     batch_dir = dir_tag, .before = 1)
+  res$wide_percent_mapped_only <- dplyr::mutate(res$wide_percent_mapped_only, batch_dir = dir_tag, .before = 1)
+  res$percent_combined         <- dplyr::mutate(res$percent_combined,         batch_dir = dir_tag, .before = 1)
+
+  master_long                 <- dplyr::bind_rows(master_long,                 res$long)
+  master_wide                 <- dplyr::bind_rows(master_wide,                 res$wide)
+  master_percent_mapped_only  <- dplyr::bind_rows(master_percent_mapped_only,  res$wide_percent_mapped_only)
+  master_percent_combined     <- dplyr::bind_rows(master_percent_combined,     res$percent_combined)
+
+  results[[dir_tag]] <- res
+}
+
+if (!is.null(master_wide)) {
+  top_out_dir <- dirname(normalizePath(input_dirs[[1]]))
+  if (isTRUE(WRITE_OUTPUTS)) {
+    readr::write_csv(master_wide,                file.path(top_out_dir, "MASTER_combined_idxstats_wide.csv"))
+    readr::write_csv(master_percent_mapped_only, file.path(top_out_dir, "MASTER_combined_idxstats_wide_percent_mapped_only.csv"))
+    readr::write_csv(master_percent_combined,    file.path(top_out_dir, "MASTER_combined_idxstats_percent_combined.csv"))
+    readr::write_csv(master_long,                file.path(top_out_dir, "MASTER_combined_idxstats_long.csv"))
+    cat("\nMaster outputs:\n- ", file.path(top_out_dir, "MASTER_combined_idxstats_wide.csv"),
+        "\n- ", file.path(top_out_dir, "MASTER_combined_idxstats_wide_percent_mapped_only.csv"),
+        "\n- ", file.path(top_out_dir, "MASTER_combined_idxstats_percent_combined.csv"),
+        "\n- ", file.path(top_out_dir, "MASTER_combined_idxstats_long.csv"), "\n", sep = "")
+  }
+} else {
+  warning("No outputs produced. Check input_dirs and mapping_tbl.")
+}
+```
+
+```{r metrics, message=FALSE, warning=FALSE}
+# ===== 4) Metrics: precision/recall/F1 (exclude unmapped); ignore blanks & unclassified; method summary + split filtered =====
+stopifnot(!is.null(master_wide), nrow(master_wide) > 0)
+
+species_cols <- setdiff(names(master_wide), c("batch_dir","sample"))
+unmapped_col <- species_cols[tolower(species_cols) == "unmapped"]
+mapped_cols  <- setdiff(species_cols, unmapped_col)
+
+base_pairs <- master_wide %>% distinct(batch_dir, sample)
+
+uniq_samples <- sort(unique(master_wide$sample))
+exp_tbl <- tibble(
+  sample   = uniq_samples,
+  expected = unname(expected_map[match(uniq_samples, names(expected_map))])
+)
+
+rowsum_tbl <- master_wide %>%
+  mutate(
+    total_all    = rowSums(across(all_of(species_cols)), na.rm = TRUE),
+    total_mapped = rowSums(across(all_of(mapped_cols)),  na.rm = TRUE),
+    unmapped_cnt = if (length(unmapped_col)) .data[[unmapped_col]] else 0
+  ) %>%
+  select(batch_dir, sample, total_all, total_mapped, unmapped_cnt)
+
+long_mapped <- master_wide %>%
+  select(batch_dir, sample, all_of(mapped_cols)) %>%
+  pivot_longer(-c(batch_dir, sample), names_to = "species", values_to = "count")
+
+tp_tbl <- long_mapped %>%
+  left_join(exp_tbl, by = "sample") %>%
+  filter(!is.na(expected), species == expected) %>%
+  group_by(batch_dir, sample) %>%
+  summarise(tp = sum(count, na.rm = TRUE), .groups = "drop")
+
+colsum_tbl <- long_mapped %>%
+  group_by(batch_dir, species) %>%
+  summarise(colsum = sum(count, na.rm = TRUE), .groups = "drop")
+
+stopifnot(all(c("batch_dir","sample","method") %in% names(method_map)))
+method_lookup <- base_pairs %>% left_join(method_map, by = c("batch_dir","sample"))
+
+metrics_per_sample_raw <- base_pairs %>%
+  left_join(exp_tbl,     by = "sample") %>%
+  left_join(rowsum_tbl,  by = c("batch_dir","sample")) %>%
+  left_join(tp_tbl,      by = c("batch_dir","sample")) %>%
+  left_join(colsum_tbl,  by = c("batch_dir" = "batch_dir", "expected" = "species")) %>%
+  left_join(method_lookup, by = c("batch_dir","sample")) %>%
+  mutate(
+    tp     = tidyr::replace_na(tp, 0),
+    colsum = tidyr::replace_na(colsum, 0),
+    precision = if_else(!is.na(expected) & total_mapped > 0, tp / total_mapped, NA_real_),
+    recall = if_else(!is.na(expected) & colsum > 0, tp / colsum, NA_real_),
+    f1 = if_else(!is.na(recall) & !is.na(precision) & (recall + precision) > 0,
+                 2 * recall * precision / (recall + precision), NA_real_),
+    misassigned = if_else(!is.na(expected), pmax(total_mapped - tp, 0), NA_real_),
+    misassigned_pct_of_mapped = if_else(!is.na(expected) & total_mapped > 0,
+                                        100 * misassigned / total_mapped, NA_real_),
+    unmapped_pct_total = if_else(total_all > 0, 100 * unmapped_cnt / total_all, NA_real_),
+    correct_pct_of_all = if_else(!is.na(expected) & total_all > 0, 100 * tp / total_all, NA_real_)
+  )
+
+metrics_eval <- metrics_per_sample_raw %>%
+  dplyr::filter(!is.na(expected)) %>%
+  dplyr::filter(!grepl(IGNORE_SAMPLES_REGEX, sample, perl = TRUE))
+
+method_summary <- metrics_eval %>%
+  dplyr::group_by(method) %>%
+  dplyr::summarise(
+    mean_recall_pct = round(mean(recall, na.rm = TRUE) * 100, 3),
+    mean_precision_pct    = round(mean(precision,    na.rm = TRUE) * 100, 3),
+    mean_f1_pct        = round(mean(f1,        na.rm = TRUE) * 100, 3),
+    misassigned_pct_of_mapped = round(
+      100 * sum(misassigned, na.rm = TRUE) / sum(total_mapped, na.rm = TRUE),
+      3
+    ),
+    n_samples = dplyr::n(),
+    .groups = "drop"
+  ) %>%
+  dplyr::arrange(method)
+
+tbl_unfiltered <- method_summary
+
+per_sample_table <- metrics_eval %>%
+  dplyr::transmute(
+    batch_dir, method, sample, expected,
+    tp,
+    total_mapped,
+    total_all,                       
+    recall_pct          = round(recall * 100, 3),
+    precision_pct             = round(precision    * 100, 3),  
+    f1_pct                 = round(f1        * 100, 3),
+    misassigned,
+    misassigned_pct_of_mapped = round(misassigned_pct_of_mapped, 3),
+    unmapped_pct_total     = round(unmapped_pct_total, 3)  
+  ) %>%
+  dplyr::arrange(batch_dir, method, sample)
+
+per_sample_table %>%
+  knitr::kable(format = "html", digits = 3) %>%
+  kableExtra::kable_styling(full_width = FALSE, fixed_thead = TRUE) %>%
+  kableExtra::scroll_box(width = "100%", height = "450px")
+
+cat("\n\n### Method summary (assigned reads only)\n")
+knitr::kable(tbl_unfiltered, digits = 3)
+```
+
+```{r save_metrics, eval=FALSE}
+# ===== 5) (Optional) Save metrics =====
+out_dir <- dirname(normalizePath(input_dirs[[1]]))
+readr::write_csv(metrics_display,            file.path(out_dir, "MASTER_metrics_per_sample.csv"))
+readr::write_csv(method_summary,             file.path(out_dir, "MASTER_metrics_by_method.csv"))
+readr::write_csv(method_summary_by_filtered, file.path(out_dir, "MASTER_metrics_by_method_split_filtered.csv"))
+```
+
+```{r misassigned_per_million_plots, message=FALSE, warning=FALSE}
+
+plot_base <- metrics_per_sample_raw %>%
+  dplyr::filter(!grepl("(?i)_filtered", batch_dir)) %>%
+  dplyr::mutate(
+    method4 = gsub("_Blank$", "", method),
+    method4 = factor(method4, levels = c("Standard", "SFB", "PLP", "SFB+PLP")),
+    sample_type = dplyr::case_when(
+      sample %in% c("I", "O") ~ "Water",
+      TRUE ~ sample
+    ),
+    sample_label = dplyr::case_when(
+      sample_type == "Water" ~ "Water",
+      TRUE ~ unname(expected_map[sample_type])
+    ),
+    misassigned_for_plot = dplyr::if_else(
+      is.na(misassigned),
+      total_mapped,
+      misassigned
+    ),
+    misassigned_per_million = dplyr::if_else(
+      total_mapped > 0,
+      1e6 * misassigned_for_plot / total_mapped,
+      NA_real_
+    )
+  ) %>%
+  dplyr::filter(!is.na(method4),
+                !is.na(misassigned_per_million))
+
+sample_label_levels <- c(
+  "Water",
+  unname(expected_map[c("M", "L", "P", "C")])
+)
+
+plot_base <- plot_base %>%
+  dplyr::mutate(
+    sample_label = factor(sample_label, levels = sample_label_levels)
+  )
+
+batches_20ng <- c(
+  "20251020_MLI_PCO_20ng",
+  "20251023_CPI_LMO_20ng",
+  "20251026_PMI_LCO_20ng"
+)
+
+df_20ng_avg <- plot_base %>%
+  dplyr::filter(batch_dir %in% batches_20ng) %>%
+  dplyr::group_by(sample_type, sample_label, method4) %>%
+  dplyr::summarise(
+    misassigned_per_million = mean(misassigned_per_million, na.rm = TRUE),
+    n = dplyr::n(),
+    .groups = "drop"
+  ) %>%
+  dplyr::filter(!is.na(misassigned_per_million))
+
+df_by_batch <- plot_base %>%
+  dplyr::group_by(batch_dir, sample_type, sample_label, method4) %>%
+  dplyr::summarise(
+    misassigned_per_million = mean(misassigned_per_million, na.rm = TRUE),
+    n = dplyr::n(),
+    .groups = "drop"
+  ) %>%
+  dplyr::filter(!is.na(misassigned_per_million))
+```
+
+```{r misassigned_shared_pairs_final, message=FALSE, warning=FALSE, fig.height=10,fig.width=8}
+
+plot_shared <- metrics_per_sample_raw %>%
+  filter(!grepl("(?i)_filtered", batch_dir)) %>%
+  mutate(
+    method4 = gsub("_Blank$", "", method),
+    method4 = factor(method4, levels = c("Standard", "SFB", "PLP", "SFB+PLP")),
+    sample_type = case_when(
+      sample %in% c("I", "O") ~ "Water",
+      TRUE ~ sample
+    ),
+    sample_label = case_when(
+      sample_type == "Water" ~ "Water",
+      TRUE ~ unname(expected_map[sample_type])
+    ),
+    misassigned_for_plot = if_else(
+      is.na(misassigned),
+      total_mapped,
+      misassigned
+    )
+  ) %>%
+  filter(!is.na(method4))
+
+denom_tbl <- plot_shared %>%
+  group_by(batch_dir, method4) %>%
+  summarise(
+    total_mapped_batch_method = sum(total_mapped, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+plot_shared <- plot_shared %>%
+  left_join(denom_tbl, by = c("batch_dir", "method4")) %>%
+  mutate(
+    misassigned_per_million_shared = if_else(
+      total_mapped_batch_method > 0,
+      1e6 * misassigned_for_plot / total_mapped_batch_method,
+      NA_real_
+    )
+  )
+
+sample_label_levels <- c("Water", unname(expected_map[c("M", "L", "P", "C")]))
+
+plot_shared <- plot_shared %>%
+  mutate(sample_label = factor(sample_label, levels = sample_label_levels))
+
+df_pairs <- plot_shared %>%
+  group_by(batch_dir, sample_type, sample_label, method4) %>%
+  summarise(
+    misassigned_per_million_shared =
+      mean(misassigned_per_million_shared, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    input_ng = if_else(grepl("3ng$", batch_dir), "3 ng", "20 ng"),
+    pair_group = case_when(
+      batch_dir %in% c("20251018_MPI_LCO_3ng",
+                       "20251023_CPI_LMO_20ng") ~ "SFB & PLP",
+      batch_dir %in% c("20251019_LCI_PMO_3ng",
+                       "20251020_MLI_PCO_20ng") ~ "SFB & SFB+PLP",
+      batch_dir %in% c("20251029_LMI_CPO_3ng",
+                       "20251026_PMI_LCO_20ng") ~ "Standard & PLP",
+      TRUE ~ NA_character_
+    ),
+    input_ng = factor(input_ng, levels = c("3 ng", "20 ng")),
+    pair_group = factor(
+      pair_group,
+      levels = c("SFB & PLP", "SFB & SFB+PLP", "Standard & PLP")
+    )
+  ) %>%
+  filter(!is.na(pair_group),
+         !is.na(misassigned_per_million_shared))
+
+if (nrow(df_pairs) == 0) {
+  warning("No data available for paired facet plot (df_pairs is empty). Check batch_dir names and filters.")
+} else {
+  ggplot(df_pairs,
+         aes(x = sample_label,
+             y = misassigned_per_million_shared,
+             fill = method4)) +
+    geom_col(position = position_dodge2(width = 0.8, preserve = "single")) +
+    facet_grid(pair_group ~ input_ng, scales = "free_y") +
+    labs(
+      x = "Sample",
+      y = "Misassigned reads per million mapped reads\n(shared denominator within batch × method)",
+      fill = "Method"
+    ) +
+    theme_bw() +
+    theme(
+      axis.text.x = element_text(angle = 30, hjust = 1),
+      text = element_text(size = 10),
+      strip.background = element_rect(colour = NA)
+    )
+}
+```
+
+
+
+```{r fig.height=5,fig.width=6}
+df_summary <- df_pairs %>%
+  mutate(
+    sample_group = if_else(sample_type == "Water", "Water", "Genomic DNA")
+  ) %>%
+  group_by(sample_group, method4) %>%
+  summarise(
+    mean_mis = mean(misassigned_per_million_shared, na.rm = TRUE),
+    sd_mis   = sd(misassigned_per_million_shared, na.rm = TRUE),
+    n        = sum(!is.na(misassigned_per_million_shared)),
+    se_mis   = sd_mis / sqrt(n),
+    .groups = "drop"
+  )
+
+df_summary$sample_group <- factor(df_summary$sample_group,
+                                  levels = c("Water", "Genomic DNA"))
+
+ggplot(df_summary, aes(x = sample_group, y = mean_mis, fill = method4)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_errorbar(aes(ymin = mean_mis - se_mis,
+                    ymax = mean_mis + se_mis),
+                position = position_dodge(width = 0.8),
+                width = 0.2) +
+  labs(
+    x = NULL,
+    y = "Misassigned per million reads",
+    fill = "Protocol"
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 12),
+    axis.text.x = element_text(angle = 0, hjust = 0.5)
+  )
+```
+
+
