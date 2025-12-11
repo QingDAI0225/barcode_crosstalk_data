@@ -155,7 +155,7 @@ In 1.5 ml Eppendorf LoBind tube for each sample, mix in the following order: Bet
 | diluted NA  | 2.5 $\mu l$  | 
 | NEBNext Quick Ligation Reaction Buffer (5X) | 5 $\mu l$  | 
 | Quick T4 DNA Ligase | 2.5 $\mu l$  | 
-| Total  | 20 $\mu l$  | 
+| Total  | 25 $\mu l$  | 
 
 \begin{notebox}
 \textbf{Note on adapter dilution and volume modification}\\
@@ -168,6 +168,10 @@ We recommend mixing diluted NA and NEBNext Quick Ligation Reaction Buffer (5X) a
 \end{notebox}
 
 Incubate the reaction for 20 minutes at room temperature.
+
+Pool all samples together.
+
+Add 0.4x AMP beads, and mixed by pipetting.
 
 All downstream steps are the same as Nanopore's recommended.
 
