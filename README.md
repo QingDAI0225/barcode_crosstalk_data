@@ -15,9 +15,9 @@ This repository collects the scripts used to generate the figures and tables in 
 
 - `run_nanoplot_minimap2_samtools.sh`  
   Bash pipeline for Nanopore read QC and alignment, running on SLURM cluster. It typically:
-  - runs NanoPlot [[1]](#ref-1) on raw reads,
-  - aligns reads to the reference genomes with Minimap2 [[2]](#ref-2),
-  - computes alignment statistics with Samtools [[3]](#ref-3),
+  - runs [NanoPlot](https://github.com/wdecoster/NanoPlot) [[1]](#ref-1) on raw reads,
+  - aligns reads to the reference genomes with [Minimap2](https://github.com/lh3/minimap2) [[2]](#ref-2),
+  - computes alignment statistics with [Samtools](https://github.com/samtools/samtools) [[3]](#ref-3),
   and writes the summary files consumed by the R Markdown notebooks.
 
 - `samtools_result_analysis.Rmd`  
@@ -27,14 +27,14 @@ This repository collects the scripts used to generate the figures and tables in 
   - protocol-level comparisons that appear as figures/tables in the paper.
  
 - `minimap_megan_analysis.Rmd`  
-  R Markdown notebook for downstream analyses based on Minimap2-MEGAN outputs, including:
+  R Markdown notebook for downstream analyses based on [Minimap2-MEGAN](https://github.com/PacificBiosciences/pb-metagenomics-tools/tree/master/Taxonomic-Profiling-Minimap-Megan) outputs, including:
   - taxonomic profiling visualization of each barcoded sample,
   - generation of figures and tables used in the main text and supplement.
 
 
 ## Reference data
 
-- Minimap-MEGAN pipeline for complexed community taxonomy profiling
+- Complexed community taxonomy profiling for Minimap2-MEGAN pipeline
   - Minimap2 indexed database are downloaded from [NCBI nt database](ftp://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nt.gz*)
   - MEGAN database are downloade from [MEGAN6 download website](https://software-ab.cs.uni-tuebingen.de/download/megan6/megan-nucl-Feb2022.db.zip).
   
@@ -45,9 +45,9 @@ This repository collects the scripts used to generate the figures and tables in 
 
 ## Dependencies
 
-- Basecalling and demultiplexing (Dorado)
+- Basecalling and demultiplexing (Dorado pipeline)
 
-- Complex community taxonomy profiling (Minimap2-MEGAN)
+- Complex community taxonomy profiling (Minimap2-MEGAN pipeline)
 
   
 ## References
