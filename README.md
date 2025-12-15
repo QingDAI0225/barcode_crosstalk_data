@@ -27,7 +27,7 @@ This repository collects the scripts used to generate the figures and tables in 
   - protocol-level comparisons that appear as figures/tables in the paper.
  
 - `minimap_megan_analysis.Rmd`  
-  R Markdown notebook for downstream analyses based on [Minimap2-MEGAN](https://github.com/PacificBiosciences/pb-metagenomics-tools/tree/master/Taxonomic-Profiling-Minimap-Megan) outputs, including:
+  R Markdown notebook for downstream analyses based on Minimap2-MEGAN outputs, including:
   - taxonomic profiling visualization of each barcoded sample,
   - generation of figures and tables used in the main text and supplement.
 
