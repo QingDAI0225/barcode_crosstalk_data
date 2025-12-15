@@ -55,7 +55,7 @@ This repository collects the scripts used to generate the figures and tables in 
 1. <a id="ref-1"></a> De Coster et al. NanoPack2: population-scale evaluation of long-read sequencing data. *Bioinformatics* **39**, DOI: 10.1093/bioinformatics/btad311 (2023).
 2. <a id="ref-2"></a> Li, H. New strategies to improve minimap2 alignment accuracy. *Bioinformatics* **37**, 4572–4574, DOI: 10.1093/
 bioinformatics/btab705 (2021).
-3. <a id="ref-3"></a> Danecek, P. et al. Twelve years of SAMtools and BCFtools. *GigaScience* **10**, DOI: 10.1093/gigascience/giab008 (2021). *BiologyDirect* **13 **, DOI:10.1186/s13062-018-0208-7 (2018).
+3. <a id="ref-3"></a> Danecek, P. et al. Twelve years of SAMtools and BCFtools. *GigaScience* **10**, DOI: 10.1093/gigascience/giab008 (2021). *BiologyDirect* **13**, DOI:10.1186/s13062-018-0208-7 (2018).
 4. <a id="ref-4"></a> Daniel H. Huson et al. MEGAN-LR: new algorithms allow accurate binning and easy interactive exploration of metagenomic long reads and contigs.
 5. <a id="ref-5"></a> Nguyen, S. V. et al. The atcc genome portal: 3, 938 authenticated microbial reference genomes. *Microbiol. Resour. Announc.* **13**, DOI: 10.1128/mra.01045-23 (2024).
 ---
