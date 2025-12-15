@@ -35,8 +35,8 @@ This repository collects the scripts used to generate the figures and tables in 
 ## Reference data
 
 - Complexed community taxonomy profiling for Minimap2-MEGAN pipeline
-  - Minimap2 indexed database are downloaded from NCBI nt database(ftp://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nt.gz*)
-  - MEGAN database are downloade from [MEGAN6 download website](https://software-ab.cs.uni-tuebingen.de/download/megan6/megan-nucl-Feb2022.db.zip).
+  - Minimap2 indexed database are downloaded from NCBI nt database (ftp://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nt.gz*)
+  - MEGAN database are downloade from [MEGAN6 download website](https://software-ab.cs.uni-tuebingen.de/download/megan6/) (megan-nucl-Feb2022.db.zip).
   
 - Customized Minimap2 mapping
   - The four defined ATCC genomes DNA sequences are downloaded from [ATCC official protal](https://github.com/ATCC-Bioinformatics/genome\_portal\_api) [[4]](#ref-4)
