@@ -15,19 +15,19 @@ This repository collects the scripts used to generate the figures and tables in 
 
 - `run_nanoplot_minimap2_samtools.sh`  
   Bash pipeline for Nanopore read QC and alignment, running on SLURM cluster. It typically:
-  - runs NanoPlot on raw reads,
-  - aligns reads to the reference genomes with Minimap2,
-  - computes alignment statistics with Samtools,
+  - runs NanoPlot [[1]](#ref-1) on raw reads,
+  - aligns reads to the reference genomes with Minimap2 [[2]](#ref-2),
+  - computes alignment statistics with Samtools [[3]](#ref-3),
   and writes the summary files consumed by the R Markdown notebooks.
 
 - `samtools_result_analysis.Rmd`  
-  R Markdown notebook that summarizes samtools statistics, including:
+  R Markdown notebook that summarizes Samtools statistics, including:
   - mapping rates and on-target fractions,
   - quantification of barcode crosstalk across protocols and input amounts,
   - protocol-level comparisons that appear as figures/tables in the paper.
  
 - `minimap_megan_analysis.Rmd`  
-  R Markdown notebook for downstream analyses based on minimap2/MEGAN outputs, including:
+  R Markdown notebook for downstream analyses based on Minimap2-MEGAN outputs, including:
   - taxonomic profiling visualization of each barcoded sample,
   - generation of figures and tables used in the main text and supplement.
 
@@ -39,12 +39,23 @@ This repository collects the scripts used to generate the figures and tables in 
   - MEGAN database are downloade from [MEGAN6 download website](https://software-ab.cs.uni-tuebingen.de/download/megan6/megan-nucl-Feb2022.db.zip).
   
 - Customized Minimap2 mapping
-  - The four defined ATCC genomes DNA sequences are downloaded from [ATCC official protal](https://github.com/ATCC-Bioinformatics/genome\_portal\_api) [[1]](#ref-1)
+  - The four defined ATCC genomes DNA sequences are downloaded from [ATCC official protal](https://github.com/ATCC-Bioinformatics/genome\_portal\_api) [[4]](#ref-4)
   - ONT DCS sequences are downloaded from [ONT official website](https://a.storyblok.com/f/196663/x/f69b1ef376/dcs\_reference.txt).
   - PhiX sequences are downloaded from [NCBI Reference Sequence NC_001422.1](https://www.ncbi.nlm.nih.gov/nuccore/9626372)
 
+## Dependencies
+
+- Basecalling and demultiplexing (Dorado)
+
+- Complex community taxonomy profiling (Minimap2-MEGAN)
+
   
 ## References
-1. <a id="ref-1"></a> Nguyen, S. V. et al. The atcc genome portal: 3, 938 authenticated microbial reference genomes. *Microbiol. Resour. Announc.* **13**, DOI: 10.1128/mra.01045-23 (2024).
+1. <a id="ref-1"></a> De Coster et al. NanoPack2: population-scale evaluation of long-read sequencing data. *Bioinformatics* **39**, DOI: 10.1093/bioinformatics/btad311 (2023)
+2. <a id="ref-2"></a> Li, H. New strategies to improve minimap2 alignment accuracy. Bioinformatics 37, 4572–4574, DOI: 10.1093/
+bioinformatics/btab705 (2021).
+3. Danecek, P. et al. Twelve years of SAMtools and BCFtools. GigaScience 10, DOI: 10.1093/gigascience/giab008 (2021).
+Giab008, https://academic.oup.com/gigascience/article-pdf/10/2/giab008/36332246/giab008.pdf.
+4. <a id="ref-4"></a> Nguyen, S. V. et al. The atcc genome portal: 3, 938 authenticated microbial reference genomes. *Microbiol. Resour. Announc.* **13**, DOI: 10.1128/mra.01045-23 (2024).
 ---
 
