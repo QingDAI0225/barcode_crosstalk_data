@@ -52,10 +52,9 @@ This repository collects the scripts used to generate the figures and tables in 
   
 ## References
 1. <a id="ref-1"></a> De Coster et al. NanoPack2: population-scale evaluation of long-read sequencing data. *Bioinformatics* **39**, DOI: 10.1093/bioinformatics/btad311 (2023)
-2. <a id="ref-2"></a> Li, H. New strategies to improve minimap2 alignment accuracy. Bioinformatics 37, 4572–4574, DOI: 10.1093/
+2. <a id="ref-2"></a> Li, H. New strategies to improve minimap2 alignment accuracy. *Bioinformatics* **37**, 4572–4574, DOI: 10.1093/
 bioinformatics/btab705 (2021).
-3. Danecek, P. et al. Twelve years of SAMtools and BCFtools. GigaScience 10, DOI: 10.1093/gigascience/giab008 (2021).
-Giab008, https://academic.oup.com/gigascience/article-pdf/10/2/giab008/36332246/giab008.pdf.
+3. Danecek, P. et al. Twelve years of SAMtools and BCFtools. *GigaScience* **10**, DOI: 10.1093/gigascience/giab008 (2021).
 4. <a id="ref-4"></a> Nguyen, S. V. et al. The atcc genome portal: 3, 938 authenticated microbial reference genomes. *Microbiol. Resour. Announc.* **13**, DOI: 10.1128/mra.01045-23 (2024).
 ---
 
