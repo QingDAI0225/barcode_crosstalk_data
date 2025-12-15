@@ -143,16 +143,18 @@ Thaw either Long Fragment Buffer (LFB) or Short Fragment Buffer (SFB) at room te
 
 Prepare diluted NA based on number of samples in your library as follows:
 
-|   | Volume per sample | for 24 samples |  for 48 samples |
-|----------|----------|----------|----------|
-| Total volume of diluted NA  | 2.5 $\mu l$  | 60 $\mu l$  | 120 $\mu l$  |  
+| Reagent  | Volume for 2 samples | for 12 samples | for 24 samples | 
+|----------|----------|----------|----------|----------|
+| Original NA  | 5 $\mu l$  | 5 $\mu l$  | 5 $\mu l$  | 
+| Molecular grade water  | 0 $\mu l$  | 25 $\mu l$  |55 $\mu l$  |
+| Total  | 5 $\mu l$  | 30 $\mu l$  | 60 $\mu l$  | 
 
 In 1.5 ml Eppendorf LoBind tube for each sample, mix in the following order: Between each addition, pipette mix 10-20 times.
 
 | Reagent | Volume | 
 |----------|----------|
-| barcoded sample  | 15 $\mu l$  | 
-| diluted NA  | 2.5 $\mu l$  | 
+| Barcoded sample  | 15 $\mu l$  | 
+| Diluted NA  | 2.5 $\mu l$  | 
 | NEBNext Quick Ligation Reaction Buffer (5X) | 5 $\mu l$  | 
 | Quick T4 DNA Ligase | 2.5 $\mu l$  | 
 | Total  | 25 $\mu l$  | 
