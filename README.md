@@ -35,13 +35,13 @@ This repository collects the scripts used to generate the figures and tables in 
 ## Reference data
 
 - Minimap-MEGAN pipeline for complexed community taxonomy profiling
-  Minimap2 indexed database are downloaded from [NCBI nt database](ftp://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nt.gz*)
-  MEGAN database are downloade from [MEGAN6 download website](https://software-ab.cs.uni-tuebingen.de/download/megan6/megan-nucl-Feb2022.db.zip).
+  - Minimap2 indexed database are downloaded from [NCBI nt database](ftp://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nt.gz*)
+  - MEGAN database are downloade from [MEGAN6 download website](https://software-ab.cs.uni-tuebingen.de/download/megan6/megan-nucl-Feb2022.db.zip).
   
 - Customized Minimap2 mapping
-  The four defined ATCC genomes DNA sequences are downloaded from [ATCC official protal](https://github.com/ATCC-Bioinformatics/genome\_portal\_api) [1]
-  ONT DCS sequences are downloaded from [ONT official website](https://a.storyblok.com/f/196663/x/f69b1ef376/dcs\_reference.txt).
-  PhiX sequences are downloaded from [NCBI Reference Sequence NC_001422.1](https://www.ncbi.nlm.nih.gov/nuccore/9626372)
+  - The four defined ATCC genomes DNA sequences are downloaded from [ATCC official protal](https://github.com/ATCC-Bioinformatics/genome\_portal\_api) [1]
+  - ONT DCS sequences are downloaded from [ONT official website](https://a.storyblok.com/f/196663/x/f69b1ef376/dcs\_reference.txt).
+  - PhiX sequences are downloaded from [NCBI Reference Sequence NC_001422.1](https://www.ncbi.nlm.nih.gov/nuccore/9626372)
 
   
 ## References
