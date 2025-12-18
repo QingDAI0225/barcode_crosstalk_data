@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/1110180378.svg)](https://doi.org/10.5281/zenodo.17981223)
+
 # barcode_crosstalk_data
 
 Analysis code and protocols for the manuscript:
