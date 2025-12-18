@@ -45,7 +45,7 @@ This repository collects the scripts used to generate the figures and tables in 
 
 ## Dependencies
 
-- Basecalling and demultiplexing (Dorado pipeline)
+- Basecalling and demultiplexing ([Dorado pipeline](https://github.com/graneklab/dorado-pipelines/))
 
 - Complex community taxonomy profiling ([Minimap2-MEGAN pipeline](https://github.com/QingDAI0225/pacbio-metagenomics-tools))
   - A minor modified pipeline from [PacBio Minimap-MEGAN pipeline](https://github.com/lh3/minimap2) for parallel running on SLURM cluster. The step 6 outputs are used for total reads summary, and step 9 filtered mpa format outputs are used for relative abundance calculation and visualization.
