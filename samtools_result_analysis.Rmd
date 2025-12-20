@@ -315,7 +315,7 @@ if (!is.null(master_wide)) {
 ```
 
 ```{r metrics, message=FALSE, warning=FALSE}
-# ===== 4) Metrics: precision/recall/F1 (exclude unmapped); ignore blanks & unclassified; method summary + split filtered =====
+# ===== 4) Metrics: precision/recall/F1 (exclude unmapped); ignore blanks & unclassified; method summary =====
 stopifnot(!is.null(master_wide), nrow(master_wide) > 0)
 
 species_cols <- setdiff(names(master_wide), c("batch_dir","sample"))
