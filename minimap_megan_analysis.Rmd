@@ -17,11 +17,13 @@ library(purrr)
 library(compositions)
 library(tibble)
 library(stringr)
+library(ggalluvial)
+library(scales)
 ```
 
 ### Load data, merge parts and split lineage column into "kingdom","phylum","class","order","family","genus","species","strains"
 ```{r}
-data_dir <- "/cwork/qd33/pipeline_result/taxonomy_profiling/protocol_modification/minimap_megan_9"
+data_dir <- "/work/qd33/pipeline_result/taxonomy_profiling/barcode_crosstalk/9-kraken-mpa-reports"
 topN <- 35 
 
 all_files <- list.files(
@@ -140,7 +142,7 @@ sample_order_top_down <- c("102K", "LMD", "PhX", "NC", "0")
 sample_label_map <- c(
   "102K" = "p-trap water sample",
   "LMD"  = "DCS lambda",
-  "PhX"  = "PhiX",
+  "PhX"  = "ΦX174",
   "NC"   = "water blank",
   "0"    = "empty blank"
 )
@@ -232,6 +234,31 @@ combined
 
 ### Species-level read counts
 ```{r}
+
+readcounts_dir <- "/work/qd33/pipeline_result/taxonomy_profiling/barcode_crosstalk/6-rma"
+
+readcounts_files <- list.files(readcounts_dir, 
+                               pattern = "\\.readcounts\\.txt$", 
+                               full.names = TRUE)
+
+readcounts_tbl <- tibble(
+  file_path = readcounts_files,
+  sample_id = basename(readcounts_files) %>%
+    str_remove("\\.readcounts\\.txt$")
+) %>%
+  mutate(
+    total_reads = purrr::map_dbl(
+      file_path,
+      ~ vroom::vroom(
+          .x,
+          delim = "\t",         
+          col_names = FALSE,
+          show_col_types = FALSE
+        )[[1]][1] %>% as.numeric()
+    )
+  ) %>%
+  dplyr::select(sample_id, total_reads)
+
 sample_label_levels <- c(
   "p-trap water sample",  # 102K
   "DCS lambda",           # LMD
@@ -242,21 +269,33 @@ sample_label_levels <- c(
 
 species_level_stats <- result_tbl %>%
   mutate(
-    sample = stringr::str_remove(sample_id, "_[sp]$"),
-    batch  = if_else(stringr::str_detect(sample_id, "_s$"), "PLP", "Standard")
+    sample_id = as.character(sample_id),
+    sample    = stringr::str_remove(sample_id, "_[sp]$"),  
+    batch     = if_else(stringr::str_detect(sample_id, "_s$"),
+                        "PLP", "Standard")                
   ) %>%
   filter(sample %in% c("102K","LMD","PhX","NC","0")) %>%
-  group_by(sample, batch) %>%
+  group_by(sample_id, sample, batch) %>%
   summarise(
-    total_reads = sum(count[!stringr::str_detect(lineage, "\\|")], na.rm = TRUE),
     species_level_reads = sum(
       count[!is.na(species) & !stringr::str_detect(lineage, "\\|ss__")],
       na.rm = TRUE
     ),
-    species_level_pct = species_level_reads / total_reads,
     .groups = "drop"
   ) %>%
+  left_join(
+    readcounts_tbl %>%
+      mutate(sample_id = as.character(sample_id)),
+    by = "sample_id"
+  ) %>%
+  group_by(sample, batch) %>%
+  summarise(
+    species_level_reads = sum(species_level_reads, na.rm = TRUE),
+    total_reads         = sum(total_reads,         na.rm = TRUE),
+    .groups             = "drop"
+  ) %>%
   mutate(
+    species_level_pct = species_level_reads / total_reads,
     sample = dplyr::recode(
       sample,
       "102K" = "p-trap water sample",
@@ -269,7 +308,203 @@ species_level_stats <- result_tbl %>%
   ) %>%
   arrange(sample, batch)
 
-
 species_level_stats
+```
+
+
+```{r}
+feast_table <- species_tbl %>%
+  tidyr::pivot_wider(
+    names_from = species,
+    values_from = count,
+    values_fill = 0
+  ) %>%
+  dplyr::mutate(sample_id = as.character(sample_id)) %>%
+  as.data.frame()
+
+rownames(feast_table) <- feast_table$sample_id
+
+feast_table <- feast_table[-1]
+
+sources <- c("102K_s", "LMD_s")
+sinks   <- c("102K_p", "LMD_p", "PhX_p", "NC_p", "0_p")
+keep <- c(sources, sinks)
+feast_table <- feast_table[rownames(feast_table) %in% keep, , drop = FALSE]
+
+feast_table <- as.matrix(feast_table)
+storage.mode(feast_table) <- "numeric"
+
+feast_table <- feast_table[, colSums(feast_table) > 0, drop = FALSE]
+```
+
+
+```{r}
+# ---- FEAST metadata ----
+
+feast_meta <- data.frame(
+  SampleID   = rownames(feast_table),
+  Env        = rownames(feast_table),
+  SourceSink = ifelse(rownames(feast_table) %in% sources, "Source", "Sink"),
+  id         = NA_integer_,
+  stringsAsFactors = FALSE
+)
+rownames(feast_meta) = feast_meta$SampleID
+feast_meta$id[match(sinks, rownames(feast_meta))] <- seq_along(sinks)
+```
+
+```{r}
+feast_meta 
+```
+
+```{r}
+library(FEAST)
+set.seed(1)
+```
+
+```{r}
+res <- FEAST(
+  C = feast_table,
+  metadata = feast_meta,
+  different_sources_flag = 0,
+  dir_path = "~/projects/protocol_modification",
+  outfile = "feast_output"
+)
+```
+
+```{r}
+if (is.list(feast_table)) {
+  feast_table <- matrix(
+    vapply(feast_table, function(v) sum(as.numeric(v), na.rm = TRUE), numeric(1)),
+    nrow = nrow(feast_table),
+    ncol = ncol(feast_table),
+    dimnames = dimnames(feast_table)
+  )
+}
+storage.mode(feast_table) <- "numeric"
+feast_table[is.na(feast_table)] <- 0
+
+ecoli_col <- grep("Escherichia\\s*_?coli", colnames(feast_table),
+                  ignore.case = TRUE, value = TRUE)
+
+LMD_EcoliOnly <- matrix(0, nrow = 1, ncol = ncol(feast_table),
+                        dimnames = list("LMD_s_EcoliOnly", colnames(feast_table)))
+LMD_EcoliOnly[1, ecoli_col] <- sum(feast_table["LMD_s", ], na.rm = TRUE)
+
+X102K_noEcoli <- feast_table["102K_s", , drop = FALSE]
+X102K_noEcoli[1, ecoli_col] <- 0
+rownames(X102K_noEcoli) <- "102K_s_noEcoli"
+
+# 3) Append and update sources vector
+feast_table2 <- rbind(feast_table, LMD_EcoliOnly, X102K_noEcoli)
+mode(feast_table2) <- "numeric"
+
+sources2 <- sources
+sources2[sources2 == "LMD_s"]  <- "LMD_s_EcoliOnly"
+sources2[sources2 == "102K_s"] <- "102K_s_noEcoli"
+
+# 4) Keep only desired samples (sources + sinks), in a fixed order
+keep2 <- c(sources2, sinks)
+missing <- setdiff(keep2, rownames(feast_table2))
+if (length(missing) > 0) stop("Missing in feast_table2: ", paste(missing, collapse = ", "))
+
+feast_table2 <- feast_table2[match(keep2, rownames(feast_table2)), , drop = FALSE]
+
+feast_meta2 <- data.frame(
+  Env        = rownames(feast_table2),
+  SourceSink = ifelse(rownames(feast_table2) %in% sources2, "Source", "Sink"),
+  id         = NA_integer_,
+  stringsAsFactors = FALSE
+)
+rownames(feast_meta2) <- rownames(feast_table2)
+feast_meta2$id[match(sinks, rownames(feast_meta2))] <- seq_along(sinks)
+
+```
+
+```{r}
+res2 <- FEAST(
+  C = feast_table2,
+  metadata = feast_meta2,
+  EM_iterations = 1000,
+  different_sources_flag = 0,
+  dir_path = "~/projects/protocol_modification",
+  outfile  = "feast_output_ecoli_only"
+)
+
+res2
+```
+
+###Source flow visualization
+```{r}
+
+# ---- 1) Read FEAST source contribution matrix ----
+df <- read.table(
+  "~/projects/protocol_modification/feast_output_ecoli_only_source_contributions_matrix.txt",
+  sep = "\t",
+  header = TRUE
+)
+
+# Use clean internal names
+colnames(df) <- c("p_trap_noEcoli", "DCS_lambda_EcoliOnly", "Unknown")
+rownames(df) <- c("p-trap_water", "DCS_lambda", "PhiX", "water_blank", "empty_blank")
+
+# ---- 2) Labels and plotting order ----
+sink_labels <- c(
+  "p-trap_water" = "p-trap water",
+  "DCS_lambda"   = "DCS Lambda",
+  "PhiX"         = "\u03A6X174",
+  "water_blank"  = "Water blank",
+  "empty_blank"  = "Empty blank"
+)
+
+source_labels <- c(
+  "p_trap_noEcoli"       = "p-trap",
+  "DCS_lambda_EcoliOnly" = "DCS Lambda",
+  "Unknown"              = "Unknown"
+)
+
+sink_order <- c("p-trap_water", "DCS_lambda", "PhiX", "water_blank", "empty_blank")
+source_order <- c("p_trap_noEcoli", "DCS_lambda_EcoliOnly", "Unknown")
+
+# ---- 3) Convert to long format ----
+flows <- df %>%
+  rownames_to_column("Sink") %>%
+  pivot_longer(
+    cols = -Sink,
+    names_to = "Source",
+    values_to = "prop"
+  ) %>%
+  mutate(
+    Sink_raw   = Sink,
+    Source_raw = Source,
+    Sink   = factor(sink_labels[Sink], levels = sink_labels[sink_order]),
+    Source = factor(source_labels[Source], levels = source_labels[source_order])
+  )
+
+# ---- 4) Optional: attach sink total reads ----
+sink_reads <- c(
+  "p-trap_water" = sum(feast_table2["102K_p", ]),
+  "DCS_lambda"   = sum(feast_table2["LMD_p", ]),
+  "PhiX"         = sum(feast_table2["PhX_p", ]),
+  "water_blank"  = sum(feast_table2["NC_p", ]),
+  "empty_blank"  = sum(feast_table2["0_p", ])
+)
+
+flows <- flows %>%
+  mutate(
+    sink_reads = unname(sink_reads[Sink_raw]),
+    reads = prop * sink_reads
+  )
+
+# ---- 5) Plot ----
+p <- ggplot(flows, aes(axis1 = Source, axis2 = Sink, y = prop)) +
+  geom_alluvium(aes(fill = Source)) +
+  geom_stratum(fill = "grey95", color = "grey40", decreasing = FALSE,
+    reverse = FALSE) +
+  geom_text(stat = "stratum", aes(label = after_stat(stratum))) +
+  scale_x_discrete(limits = c("Source", "Sink"), expand = c(0.12, 0.05)) +
+  labs(y = "Proportion") +
+  theme_void()
+
+p
 ```
 
