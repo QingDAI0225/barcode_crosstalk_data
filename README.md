@@ -50,7 +50,7 @@ This repository collects the scripts used to generate the figures and tables in 
 - The pipeline used to run Dorado for basecalling and demultiplexing raw POD5 files is available as a [Github Release](https://github.com/QingDAI0225/dorado_basecalling_with_qscore/releases/tag/v001) and a [Zenodo Archive](https://doi.org/10.5281/zenodo.18942955) of this release.
 
 - Complex community taxonomy profiling ([Minimap2-MEGAN pipeline](https://github.com/QingDAI0225/pacbio-metagenomics-tools) and a [Zenodo Archive](https://doi.org/10.5281/zenodo.17981532))
-  - A minor modified pipeline from [PacBio Minimap-MEGAN pipeline](https://github.com/lh3/minimap2) for parallel running on SLURM cluster. The step 6 outputs are used for total reads summary, and step 9 filtered mpa format outputs are used for relative abundance calculation and visualization.
+  - A minor modified pipeline from [PacBio Minimap-MEGAN pipeline]([https://github.com/lh3/minimap2](https://github.com/QingDAI0225/pacbio-metagenomics-tools/tree/master/Taxonomic-Profiling-Minimap-Megan)) for parallel running on SLURM cluster. The step 6 outputs are used for total reads summary, and step 9 filtered mpa format outputs are used for relative abundance calculation and visualization.
 
   
 ## References
