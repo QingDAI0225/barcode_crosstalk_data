@@ -1,0 +1,671 @@
+---
+title: "Untitled"
+output: html_document
+date: "2026-02-12"
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(data.table)
+  library(ggplot2)
+})
+```
+
+```{r}
+SUMMARY_PATHS <- c(
+  "/work/qd33/data/basecalling_data/20251018_MPI_CLO_3ng_dorado131_trim_new/merged_bam",  
+  "/work/qd33/data/basecalling_data/20251019_LCI_PMO_3ng_dorado131_trim_new/merged_bam",
+  "/work/qd33/data/basecalling_data/20251020_MLI_PCO_20ng_dorado131_trim_new/merged_bam",
+  "/work/qd33/data/basecalling_data/20251023_CPI_LMO_20ng_dorado131_trim_new/merged_bam",
+  "/work/qd33/data/basecalling_data/20251026_PMI_LCO_20ng_dorado131_trim_new/merged_bam",
+  "/work/qd33/data/basecalling_data/20251029_LMI_CPO_3ng_dorado131_trim_new/merged_bam"
+)
+
+SAMPLESHEET_PATHS <- c(
+  "/hpc/home/qd33/projects/protocol_modification/sample_sheet"         
+)
+
+OUTDIR <- "/hpc/home/qd33/projects/protocol_modification/dorado_species_qc_out"
+
+MIN_MAPQ <- 0      
+
+dir.create(OUTDIR, showWarnings = FALSE, recursive = TRUE)
+dir.create(file.path(OUTDIR, "plots"), showWarnings = FALSE, recursive = TRUE)
+
+na_strings <- c("NA","na","N/A","n/a","","null","NULL")
+```
+
+
+```{r}
+method_map <- data.table::fread(text="
+batch_dir\tsample\tmethod
+20251018_MPI_CLO\tM\tSFB
+20251018_MPI_CLO\tP\tSFB
+20251018_MPI_CLO\tL\tPLP
+20251018_MPI_CLO\tC\tPLP
+20251018_MPI_CLO\tI\tSFB
+20251018_MPI_CLO\tO\tPLP
+20251019_LCI_PMO_3ng\tL\tSFB
+20251019_LCI_PMO_3ng\tC\tSFB
+20251019_LCI_PMO_3ng\tP\tSFB+PLP
+20251019_LCI_PMO_3ng\tM\tSFB+PLP
+20251019_LCI_PMO_3ng\tI\tSFB
+20251019_LCI_PMO_3ng\tO\tSFB+PLP
+20251029_LMI_CPO_3ng\tL\tStandard
+20251029_LMI_CPO_3ng\tC\tPLP
+20251029_LMI_CPO_3ng\tP\tPLP
+20251029_LMI_CPO_3ng\tM\tStandard
+20251029_LMI_CPO_3ng\tI\tStandard
+20251029_LMI_CPO_3ng\tO\tPLP
+20251020_MLI_PCO_20ng\tM\tSFB
+20251020_MLI_PCO_20ng\tL\tSFB
+20251020_MLI_PCO_20ng\tP\tSFB+PLP
+20251020_MLI_PCO_20ng\tC\tSFB+PLP
+20251020_MLI_PCO_20ng\tI\tSFB
+20251020_MLI_PCO_20ng\tO\tSFB+PLP
+20251023_CPI_LMO_20ng\tC\tSFB
+20251023_CPI_LMO_20ng\tP\tSFB
+20251023_CPI_LMO_20ng\tL\tPLP
+20251023_CPI_LMO_20ng\tM\tPLP
+20251023_CPI_LMO_20ng\tI\tSFB
+20251023_CPI_LMO_20ng\tO\tPLP
+20251026_PMI_LCO_20ng\tM\tStandard
+20251026_PMI_LCO_20ng\tP\tStandard
+20251026_PMI_LCO_20ng\tL\tPLP
+20251026_PMI_LCO_20ng\tC\tPLP
+20251026_PMI_LCO_20ng\tI\tStandard
+20251026_PMI_LCO_20ng\tO\tPLP
+", sep="\t", na.strings = na_strings)
+
+mapping_tbl <- data.table::fread(text="
+prefix\tspecies
+ATCC_23114\tMycoplasma hominis
+ATCC_8482\tPhocaeicola vulgatus
+ATCC_6940\tCorynebacterium striatum
+DCS_Lambda\tDCS_Lambda
+unmapped\tunmapped
+", sep="\t", na.strings = na_strings)
+
+expected_tbl <- data.table(
+  sample = c("M","P","C","L","I","O"),
+  expected_species = c("Mycoplasma hominis","Phocaeicola vulgatus","Corynebacterium striatum","DCS_Lambda", NA_character_, NA_character_),
+  is_blank = c(FALSE,FALSE,FALSE,FALSE,TRUE,TRUE)
+)
+
+setnames(method_map, c("batch_dir","sample","method"))
+method_map[, batch_dir := as.character(batch_dir)]
+method_map[, sample := as.character(sample)]
+method_map[, method := as.character(method)]
+
+mapping_tbl[, prefix := as.character(prefix)]
+mapping_tbl[, species := as.character(species)]
+```
+
+```{r}
+list_summary_files <- function(paths) {
+  out <- c()
+  for (p in paths) {
+    if (dir.exists(p)) {
+      fs <- list.files(p, pattern="sequencing_summary.*\\.txt(\\.gz)?$|sequencing_summary\\.txt(\\.gz)?$",
+                       full.names = TRUE)
+      out <- c(out, fs)
+    } else if (file.exists(p)) {
+      out <- c(out, p)
+    }
+  }
+  unique(out)
+}
+
+list_sheet_files <- function(paths) {
+  out <- c()
+  for (p in paths) {
+    if (dir.exists(p)) {
+      fs <- list.files(p, pattern="\\.tsv$|\\.txt$|\\.csv$", full.names = TRUE)
+      out <- c(out, fs)
+    } else if (file.exists(p)) {
+      out <- c(out, p)
+    }
+  }
+  unique(out)
+}
+
+summary_files <- list_summary_files(SUMMARY_PATHS)
+sheet_files   <- list_sheet_files(SAMPLESHEET_PATHS)
+
+if (length(summary_files) == 0) stop("No sequencing_summary files found. Check SUMMARY_PATHS.")
+if (length(sheet_files) == 0) stop("No sample_sheet files found. Check SAMPLESHEET_PATHS.")
+
+message(sprintf("Found %d sequencing_summary files", length(summary_files)))
+message(sprintf("Found %d sample_sheet files", length(sheet_files)))
+
+```
+
+```{r}
+read_sheet <- function(f) {
+  ss <- fread(f, na.strings = na_strings, showProgress = FALSE)
+  need <- c("sample_id","barcode","alias")
+  miss <- setdiff(need, names(ss))
+  if (length(miss) > 0) {
+    stop(sprintf("Sample sheet %s missing columns: %s", f, paste(miss, collapse=", ")))
+  }
+  ss <- ss[, .(sample_id = as.character(sample_id),
+               barcode = as.character(barcode),
+               sample = as.character(alias))]
+  ss[, sheet_file := f]
+  ss
+}
+
+ss_all <- rbindlist(lapply(sheet_files, read_sheet), fill = TRUE)
+ss_all <- ss_all[!is.na(sample_id) & !is.na(barcode) & barcode != ""]
+dup <- ss_all[, .N, by=.(sample_id, barcode)][N > 1]
+if (nrow(dup) > 0) {
+  message("WARNING: duplicated (sample_id, barcode) in sample sheets. Keeping the first occurrence.")
+  ss_all <- ss_all[order(sheet_file)]
+  ss_all <- unique(ss_all, by=c("sample_id","barcode"))
+}
+colnames(ss_all)[1] <- "experiment_id"
+```
+
+```{r}
+wanted <- c(
+  "read_id","passes_filtering","sequence_length_template","mean_qscore_template",
+  "experiment_id","alias","type",
+  "barcode_score","barcode_front_score","barcode_rear_score",
+  "alignment_genome","alignment_mapping_quality","alignment_identity","alignment_accuracy",
+  "alignment_num_alignments","alignment_num_secondary_alignments"
+)
+
+read_summary <- function(f) {
+  hdr <- fread(f, sep="\t", nrows=0, showProgress=FALSE)
+  cols <- names(hdr)
+  sel <- intersect(wanted, cols)
+  if (!("experiment_id" %in% sel)) stop(sprintf("%s missing experiment_id", f))
+  if (!("alignment_genome" %in% sel)) stop(sprintf("%s missing alignment_genome (need the joined summary)", f))
+
+  dt <- fread(f, sep="\t", select = sel, na.strings = na_strings, showProgress = TRUE)
+  dt[, file := f]
+
+  # barcode call: prefer alias/type like "barcode41"
+  if (!("alias" %in% names(dt))) dt[, alias := NA_character_]
+  if (!("type"  %in% names(dt))) dt[, type  := NA_character_]
+
+  dt[, alias := as.character(alias)]
+  dt[, type  := as.character(type)]
+
+
+  dt[, barcode := fifelse(
+    !is.na(alias) & grepl("^barcode\\d+$", alias),
+    alias,
+    fifelse(
+      !is.na(type) & grepl("^barcode\\d+$", type),
+      type,
+      NA_character_
+    )
+  )]
+dt[, barcode := as.character(barcode)]
+  dt[, experiment_id := as.character(experiment_id)]
+
+  # aligned?
+  dt[, aligned := !(is.na(alignment_genome) | alignment_genome == "*" | alignment_genome == "")]
+  # numeric columns
+  num_cols <- c("sequence_length_template","mean_qscore_template",
+                "barcode_score","barcode_front_score","barcode_rear_score",
+                "alignment_mapping_quality","alignment_identity","alignment_accuracy")
+  for (cn in intersect(num_cols, names(dt))) dt[, (cn) := as.numeric(get(cn))]
+
+  dt
+}
+
+dt <- rbindlist(lapply(summary_files, read_summary), fill = TRUE)
+```
+
+```{r}
+# join sample letter (M/P/C/L/I/O) using experiment_id + barcode
+dt <- merge(dt, ss_all[, .(experiment_id, barcode, sample)], by=c("experiment_id","barcode"), all.x=TRUE, sort=FALSE)
+
+# barcodes not in sample_sheet -> unclassified group
+dt[is.na(sample) | sample == "", sample := "unclassified"]
+
+# attach method: only for samples that exist in method_map; otherwise Unknown
+dt <- merge(dt, method_map, by.x=c("experiment_id","sample"), by.y=c("batch_dir","sample"), all.x=TRUE, sort=FALSE)
+dt[is.na(method), method := "Unknown"]
+
+# attach expected species + blank flag
+dt <- merge(dt, expected_tbl, by="sample", all.x=TRUE, sort=FALSE)
+dt[is.na(is_blank), is_blank := FALSE]  # unclassified -> not blank
+
+# -------------------- observed species from alignment_genome --------------------
+# default: unmapped if not aligned
+dt[, observed_species := "unmapped"]
+dt[aligned == TRUE, observed_species := "other_mapped"]
+
+# map by prefix
+# match: startsWith(alignment_genome, prefix) or grepl(prefix)
+for (i in seq_len(nrow(mapping_tbl))) {
+  pref <- mapping_tbl$prefix[i]
+  sp   <- mapping_tbl$species[i]
+  if (pref == "unmapped") next
+  dt[aligned == TRUE & (startsWith(alignment_genome, pref) | grepl(pref, alignment_genome, fixed=TRUE)),
+     observed_species := sp]
+}
+# If alignment_genome itself already looks like one of the species labels, keep it mapped
+dt[aligned==TRUE & observed_species=="other_mapped" & alignment_genome %in% mapping_tbl$prefix,
+   observed_species := alignment_genome]
+```
+
+```{r}
+dt[, pass_mapq := TRUE]
+if ("alignment_mapping_quality" %in% names(dt)) {
+  dt[aligned == TRUE, pass_mapq := is.finite(alignment_mapping_quality) & alignment_mapping_quality >= MIN_MAPQ]
+}
+
+# core filters for comparisons
+core <- dt[passes_filtering == TRUE]
+
+# status for sample reads: correct vs misassigned vs unaligned/other
+core[, status_sample := fifelse(
+  sample %in% c("M","P","C","L","I","O"),
+
+  fifelse(
+    sample %in% c("I","O"),
+    fifelse(
+      observed_species == "unmapped",
+      "unaligned",
+      "misassigned"
+    ),
+
+    fifelse(
+      observed_species == expected_species,
+      "correct",
+      fifelse(
+        observed_species != "unmapped" &
+          observed_species %in% expected_tbl[sample %in% c("M","P","C","L"),
+                                             expected_species],
+        "misassigned",
+        fifelse(
+          observed_species == "unmapped",
+          "unaligned",
+          "other_mapped"
+        )
+      )
+    )
+  ),
+
+  NA_character_
+)]
+
+# group for unclassified barcodes (not in sample_sheet)
+core[, status_unclassified := fifelse(sample == "unclassified",
+                               fifelse(observed_species == "unmapped", "unclassified_unmapped", "unclassified_mapped"),
+                               NA_character_)]
+```
+
+```{r}
+# -------------------- Convenience aliases + grouping for downstream plots --------------------
+core[, status := status_sample]
+core[, pred_species := observed_species]
+
+# Group samples for Water vs Genomic DNA plots used later
+core[, truth_group := fifelse(sample %in% c("I","O"), "Water",
+                       fifelse(sample %in% c("M","P","C","L"), "Genomic DNA", NA_character_))]
+
+# Human-readable sample labels (Water + expected species names)
+core[, sample_label := fifelse(truth_group == "Water", "Water", expected_species)]
+
+# Tag input amount from experiment_id suffix
+core[, input_ng := fifelse(grepl("3ng$", experiment_id), "3 ng",
+                    fifelse(grepl("20ng$", experiment_id), "20 ng", NA_character_))]
+
+core[experiment_id == "20251018_MPI_CLO", input_ng := "3 ng"] 
+
+core[, input_ng := factor(input_ng, levels = c("3 ng", "20 ng"))]
+
+```
+
+### QC table: mapped read counts by method, sample, expected species, observed species, and status
+```{r}
+tab_sample <- core[sample %in% c("M","P","C","L","I","O") & pass_mapq == TRUE,
+                   .N, by=.(method, sample, expected_species, observed_species, status_sample)]
+fwrite(tab_sample, file.path(OUTDIR, "counts_sample_by_method_species_status.tsv"), sep="\t")
+```
+
+### misassignment rate by method
+
+- Method-level misassignment fraction among mapped reads classified as correct or misassigned
+
+```{r}
+rate_by_method <- core[
+  sample %in% c("M","P","C","L","I","O") &
+  pass_mapq == TRUE &
+  aligned == TRUE,
+  .(
+    n_mapped = sum(status_sample %in% c("correct","misassigned")),
+    misassigned = sum(status_sample == "misassigned"),
+    mis_frac = sum(status_sample == "misassigned") / sum(status_sample %in% c("correct","misassigned"))
+  ),
+  by = .(method)
+]
+
+setorder(rate_by_method, -mis_frac)
+fwrite(rate_by_method, file.path(OUTDIR, "misassign_rate_by_method.tsv"), sep="\t")
+```
+
+
+
+### Table: barcode × mapping confusion summary
+
+- Confusion matrix rows = barcode-linked samples; columns = target species plus Unmapped.
+- Blank barcodes are retained in the confusion matrix so that reads assigned to blank barcodes but mapped to target species contribute to recall denominators.
+- Per-barcode precision, recall, and F1 are computed for gDNA barcodes only.
+- Final Table S4 reports the mean recall, precision, and F1 across all gDNA barcode instances within each method.
+
+
+```{r}
+gDNA_samples  <- c("M","P","C","L")
+blank_samples <- c("I","O")
+
+# =========================
+# 1) Species columns to track
+# =========================
+target_species <- unique(na.omit(as.character(
+  expected_tbl[sample %in% gDNA_samples, expected_species]
+)))
+sp_cols <- target_species
+target_species_ext <- c(target_species, "Unmapped")
+
+# =========================
+# 2) Build confusion matrix (keep blanks in matrix)
+#    Anything not mapped to target species is counted as "Unmapped"
+# =========================
+core_s4 <- core[
+  method != "Unknown" &
+    sample %in% c(gDNA_samples, blank_samples)
+]
+
+core_s4[, observed_species_s4 := ifelse(
+  pass_mapq == TRUE & !is.na(observed_species) & observed_species %in% target_species,
+  as.character(observed_species),
+  "Unmapped"
+)]
+
+counts_long <- core_s4[
+  , .(N = .N),
+  by = .(experiment_id, method, sample, observed_species = observed_species_s4)
+]
+
+grid_rows <- unique(method_map[
+  method != "Unknown" & sample %in% c(gDNA_samples, blank_samples),
+  .(experiment_id = batch_dir, method, sample)
+])
+
+grid_full <- grid_rows[
+  , .(observed_species = target_species_ext),
+  by = .(experiment_id, method, sample)
+]
+
+s4_counts <- merge(
+  grid_full, counts_long,
+  by = c("experiment_id","method","sample","observed_species"),
+  all.x = TRUE
+)
+s4_counts[is.na(N), N := 0L]
+
+confusion_wide <- dcast(
+  s4_counts,
+  experiment_id + method + sample ~ observed_species,
+  value.var = "N",
+  fill = 0
+)
+
+fwrite(
+  confusion_wide,
+  file.path(OUTDIR, "confusion_barcode_by_species_S4_used.tsv"),
+  sep = "\t"
+)
+
+# =========================
+# 3) Per-gDNA-barcode precision / recall / F1
+# =========================
+exp_map <- unique(
+  expected_tbl[sample %in% gDNA_samples, .(sample, expected_species)]
+)
+
+tab_g <- merge(
+  confusion_wide[sample %in% gDNA_samples],
+  exp_map,
+  by = "sample",
+  all.x = TRUE
+)
+
+# recall denominator includes blank rows mapped to target species
+col_tot <- confusion_wide[
+  , lapply(.SD, sum),
+  by = .(experiment_id),
+  .SDcols = sp_cols
+]
+
+col_tot_long <- melt(
+  col_tot,
+  id.vars = "experiment_id",
+  variable.name = "expected_species",
+  value.name = "col_total_expected"
+)
+
+tab_g[, row_total_species := rowSums(as.matrix(.SD)), .SDcols = sp_cols]
+
+m_g   <- as.matrix(tab_g[, ..sp_cols])
+idx_c <- match(tab_g$expected_species, sp_cols)
+
+tp <- rep(NA_real_, nrow(tab_g))
+ok <- which(!is.na(idx_c))
+if (length(ok)) tp[ok] <- m_g[cbind(ok, idx_c[ok])]
+tab_g[, tp := tp]
+
+tab_g <- merge(
+  tab_g,
+  col_tot_long,
+  by = c("experiment_id","expected_species"),
+  all.x = TRUE
+)
+
+tab_g[, precision := fifelse(row_total_species > 0, tp / row_total_species, NA_real_)]
+tab_g[, recall    := fifelse(col_total_expected > 0, tp / col_total_expected, NA_real_)]
+tab_g[, f1 := fifelse(
+  is.finite(precision) & is.finite(recall) & (precision + recall) > 0,
+  2 * precision * recall / (precision + recall),
+  NA_real_
+)]
+
+fwrite(
+  tab_g[, .(
+    experiment_id, method, sample, expected_species,
+    tp, row_total_species, col_total_expected,
+    precision, recall, f1
+  )],
+  file.path(OUTDIR, "Table_S4_barcode_instance_metrics.tsv"),
+  sep = "\t"
+)
+
+# =========================
+# 4) Final Table S4
+# =========================
+table_s4 <- tab_g[, .(
+  Mean_Recall_pct    = 100 * mean(recall,    na.rm = TRUE),
+  Mean_Precision_pct = 100 * mean(precision, na.rm = TRUE),
+  Mean_F1_pct        = 100 * mean(f1,        na.rm = TRUE),
+  n_gdna_instance    = .N,
+  n_batches          = uniqueN(experiment_id)
+), by = .(Method = method)]
+
+setorder(table_s4, Method)
+
+if (requireNamespace("knitr", quietly = TRUE)) {
+  knitr::kable(table_s4, digits = 3)
+} else {
+  table_s4
+}
+```
+
+
+### Summary: sample-level misassigned per million mapped reads with shared denominator
+
+- target_species defined in the previous section is reused here
+
+```{r}
+gDNA_samples  <- c("M","P","C","L")
+blank_samples <- c("I","O")
+ord <- c("Standard", "SFB", "PLP", "SFB+PLP")
+sample_label_levels <- c(
+  "Water",
+  "Mycoplasma hominis",
+  "DCS_Lambda",
+  "Phocaeicola vulgatus",
+  "Corynebacterium striatum"
+)
+
+# Per-sample numerator and denominator pieces
+sample_metrics <- core[
+  method != "Unknown" &
+    sample %in% c(gDNA_samples, blank_samples),
+  .(
+    total_mapped = sum(pass_mapq == TRUE & pred_species %in% target_species),
+    tp = sum(
+      pass_mapq == TRUE &
+      pred_species %in% target_species &
+      pred_species == expected_species
+    )
+  ),
+  by = .(experiment_id, method, input_ng, sample, expected_species)
+]
+
+sample_metrics[, method := factor(method, levels = ord)]
+
+sample_metrics[, sample_label := fifelse(
+  sample %in% blank_samples,
+  "Water",
+  expected_species
+)]
+
+# For DNA samples: misassigned = target-mapped non-expected reads
+# For blanks: misassigned = all target-mapped reads
+sample_metrics[, misassigned_for_plot := fifelse(
+  sample %in% blank_samples,
+  total_mapped,
+  pmax(total_mapped - tp, 0)
+)]
+
+# Shared denominator within each batch × method
+denom_tbl <- sample_metrics[
+  ,
+  .(total_mapped_batch_method = sum(total_mapped, na.rm = TRUE)),
+  by = .(experiment_id, method, input_ng)
+]
+
+plot_shared <- merge(
+  sample_metrics,
+  denom_tbl,
+  by = c("experiment_id", "method", "input_ng"),
+  all.x = TRUE,
+  sort = FALSE
+)
+
+plot_shared[, misassigned_per_million_shared := fifelse(
+  total_mapped_batch_method > 0,
+  1e6 * misassigned_for_plot / total_mapped_batch_method,
+  NA_real_
+)]
+
+pair_tbl <- unique(plot_shared[, .(experiment_id, method)])[
+  ,
+  .(batch_pair = paste(sort(unique(as.character(method))), collapse = " & ")),
+  by = experiment_id
+]
+
+df_pairs <- merge(
+  plot_shared[, .(
+    experiment_id, method, input_ng,
+    sample_label, misassigned_per_million_shared
+  )],
+  pair_tbl,
+  by = "experiment_id",
+  all.x = TRUE,
+  sort = FALSE
+)
+
+df_pairs[, sample_label := factor(sample_label, levels = sample_label_levels)]
+```
+
+### Figure: Misassigned per million mapped reads by sample (shared denominator within batch × method)
+
+```{r}
+p2 <- ggplot(
+  df_pairs[!is.na(batch_pair)],
+  aes(x = sample_label, y = misassigned_per_million_shared, fill = method)
+) +
+  geom_col(position = position_dodge2(width = 0.8, preserve = "single")) +
+  facet_grid(batch_pair ~ input_ng, scales = "free_y") +
+  labs(
+    x = "Sample",
+    y = "Misassigned reads per million mapped reads\n(shared denominator within batch × method)",
+    fill = "Method"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    text = element_text(size = 10),
+    strip.background = element_rect(colour = NA)
+  )
+```
+
+```{r fig.height=10,fig.width=8}
+p2
+```
+
+### Figure: Mean sample-level misassigned per million mapped reads (Water vs Defined DNA)
+
+```{r}
+df_summary <- df_pairs[
+  ,
+  .(
+    mean_mis = mean(misassigned_per_million_shared, na.rm = TRUE),
+    sd_mis   = sd(misassigned_per_million_shared, na.rm = TRUE),
+    n        = sum(!is.na(misassigned_per_million_shared))
+  ),
+  by = .(
+    sample_group = fifelse(sample_label == "Water", "Water", "Genomic DNA"),
+    method
+  )
+]
+
+df_summary[, se_mis := sd_mis / sqrt(n)]
+df_summary[, sample_group := factor(sample_group, levels = c("Water", "Genomic DNA"))]
+
+p1 <- ggplot(df_summary, aes(x = sample_group, y = mean_mis, fill = method)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_errorbar(
+    aes(ymin = mean_mis - se_mis, ymax = mean_mis + se_mis),
+    position = position_dodge(width = 0.8),
+    width = 0.2
+  ) +
+  labs(
+    x = NULL,
+    y = "Misassigned reads per million mapped reads",
+    fill = "Protocol"
+  ) +
+  scale_x_discrete(labels = c(
+    "Genomic DNA" = "Defined DNA",
+    "Water" = "Water blanks"
+  )) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 12),
+    axis.text.x = element_text(angle = 0, hjust = 0.5)
+  )
+```
+
+```{r fig.height=5,fig.width=7}
+p1
+```
+
+
+
