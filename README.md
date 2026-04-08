@@ -4,7 +4,7 @@
 
 Analysis code and protocols for the manuscript:
 
-> Qing Dai, Claudia K. Gunsch, Joshua A. Granek, [*Minor Library Preparation Modification Significantly Reduces Barcode Crosstalk in ONT Multiplexed Sequencing* (bioRxiv, 2025)](https://doi.org/10.1101/2025.11.19.689316).
+> Qing Dai, Claudia K. Gunsch, Joshua A. Granek, [*Identification, quantification, and elimination of barcode crosstalk in multiplexed Oxford Nanopore sequencing* (bioRxiv, 2025)](https://doi.org/10.1101/2025.11.19.689316).
 
 This repository collects the scripts used to generate the figures and tables in the paper, together with the wet-lab protocols for the post-ligation pooling (PLP) and related library-preparation variants.
 
