@@ -1,5 +1,5 @@
 ---
-title: "Dorado Misassignment Analysis — Default"
+title: "Dorado Misassignment Analysis — Both-end"
 output: html_document
 ---
 
@@ -25,8 +25,8 @@ SUMMARY_ROOT <- Sys.getenv(
   unset = file.path(dirname(PROJECT_DIR), "data", "dorado_results")
 )
 
-DORADO_MODE <- "either_end"
-OUTPUT_SLUG <- "default"
+DORADO_MODE <- "both_ends"
+OUTPUT_SLUG <- "both_end"
 
 RUN_DIRS <- c(
   "20251018_MPI_CLO_3ng",

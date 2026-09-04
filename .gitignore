@@ -1,0 +1,10 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.html
+dorado_read_length_out/
+dorado_species_qc_out/
+nanosim_mapping/logs/
+__pycache__/
+*.pyc

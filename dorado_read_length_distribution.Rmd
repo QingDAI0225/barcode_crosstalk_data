@@ -1,0 +1,318 @@
+---
+title: "Dorado Read-Length Distributions — Default"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  dev = "ragg_png",
+  dpi = 180,
+  fig.width = 16,
+  fig.height = 9
+)
+
+suppressPackageStartupMessages({
+  library(data.table)
+  library(ggplot2)
+  library(knitr)
+})
+
+input_file <- knitr::current_input(dir = TRUE)
+PROJECT_DIR <- if (length(input_file) == 1L && nzchar(input_file)) {
+  dirname(normalizePath(input_file, mustWork = TRUE))
+} else {
+  normalizePath(getwd(), mustWork = TRUE)
+}
+DATA_ROOT <- Sys.getenv(
+  "DORADO_RESULTS_ROOT",
+  file.path(dirname(PROJECT_DIR), "data", "dorado_results")
+)
+SAMPLE_SHEET_DIR <- file.path(PROJECT_DIR, "sample_sheet")
+OUTDIR <- file.path(PROJECT_DIR, "dorado_read_length_out", "default")
+PLOT_DIR <- file.path(OUTDIR, "plots")
+dir.create(PLOT_DIR, recursive = TRUE, showWarnings = FALSE)
+
+RUN_DIRS <- c(
+  "20251018_MPI_CLO_3ng",
+  "20251019_LCI_PMO_3ng",
+  "20251020_MLI_PCO_20ng",
+  "20251023_CPI_LMO_20ng",
+  "20251026_PMI_LCO_20ng",
+  "20251029_LMI_CPO_3ng"
+)
+
+EXPECTED_GENOME <- c(
+  M = "Mycoplasma hominis",
+  P = "Phocaeicola vulgatus",
+  C = "Corynebacterium striatum",
+  L = "DCS lambda",
+  I = "blank",
+  O = "blank"
+)
+
+PANEL_TITLES <- c(
+  "20251018_MPI_CLO_3ng" = "3 ng: SFB vs PLP",
+  "20251019_LCI_PMO_3ng" = "3 ng: SFB vs SFB+PLP",
+  "20251020_MLI_PCO_20ng" = "20 ng: SFB vs SFB+PLP",
+  "20251023_CPI_LMO_20ng" = "20 ng: SFB vs PLP",
+  "20251026_PMI_LCO_20ng" = "20 ng: Standard vs PLP",
+  "20251029_LMI_CPO_3ng" = "3 ng: Standard vs PLP"
+)
+
+BLANK_METHODS <- data.table(
+  run_dir = rep(RUN_DIRS, each = 2),
+  alias = rep(c("I", "O"), times = length(RUN_DIRS)),
+  method = c(
+    "SFB", "PLP",
+    "SFB", "SFB+PLP",
+    "SFB", "SFB+PLP",
+    "SFB", "PLP",
+    "Standard", "PLP",
+    "Standard", "PLP"
+  )
+)
+
+DISPLAY_MIN_BP <- 10
+DISPLAY_MAX_BP <- 100000
+LOG_BIN_WIDTH <- 0.05
+
+extract_barcode <- function(alias, type) {
+  alias <- as.character(alias)
+  type <- as.character(type)
+  ans <- rep(NA_character_, length(alias))
+  alias_ok <- !is.na(alias) & grepl("^barcode[0-9]+$", alias)
+  type_ok <- !is.na(type) & grepl("^barcode[0-9]+$", type)
+  ans[alias_ok] <- alias[alias_ok]
+  ans[is.na(ans) & type_ok] <- type[is.na(ans) & type_ok]
+  ans
+}
+
+read_sample_sheet <- function(run_dir) {
+  sheet_file <- file.path(
+    SAMPLE_SHEET_DIR,
+    paste0(run_dir, "_sample_sheet.csv")
+  )
+  if (!file.exists(sheet_file)) {
+    stop("Missing sample sheet: ", sheet_file)
+  }
+
+  sheet <- fread(sheet_file, select = c("alias", "barcode"))
+  sheet[, expected_genome := unname(EXPECTED_GENOME[as.character(alias)])]
+  sheet[is.na(expected_genome) | expected_genome == "", expected_genome := "blank"]
+  target_run <- run_dir
+  blank_map <- BLANK_METHODS[run_dir == target_run]
+  sheet[, blank_method := blank_map$method[match(alias, blank_map$alias)]]
+  sheet[, panel_description := fifelse(
+    expected_genome == "blank",
+    paste(blank_method, "blank"),
+    expected_genome
+  )]
+  sheet[, panel_label := paste0(barcode, "\n", panel_description)]
+  sheet
+}
+
+process_batch <- function(run_dir) {
+  summary_file <- file.path(
+    DATA_ROOT,
+    run_dir,
+    "either_end",
+    "merged_bam",
+    "sequencing_summary_merged.txt"
+  )
+  if (!file.exists(summary_file)) {
+    stop("Missing Dorado sequencing summary: ", summary_file)
+  }
+
+  sheet <- read_sample_sheet(run_dir)
+  reads <- fread(
+    summary_file,
+    select = c("alias", "type", "sequence_length_template"),
+    showProgress = FALSE
+  )
+  reads[, read_length_bp := as.numeric(sequence_length_template)]
+  reads <- reads[is.finite(read_length_bp) & read_length_bp > 0]
+  reads[, barcode := extract_barcode(alias, type)]
+
+  label_lookup <- setNames(sheet$panel_label, sheet$barcode)
+  reads[, panel_label := unname(label_lookup[barcode])]
+  # Reads without a barcode call and reads assigned to a barcode absent from the
+  # batch sample sheet are both included in the Unclassified panel.
+  reads[is.na(panel_label), panel_label := "Unclassified"]
+
+  panel_levels <- c(sheet$panel_label, "Unclassified", "All reads")
+  displayed <- reads[
+    read_length_bp >= DISPLAY_MIN_BP & read_length_bp <= DISPLAY_MAX_BP
+  ]
+  displayed[, log_bin_start :=
+              floor(log10(read_length_bp) / LOG_BIN_WIDTH) * LOG_BIN_WIDTH]
+
+  histogram_data <- rbindlist(list(
+    displayed[, .(frequency = .N), by = .(panel_label, log_bin_start)],
+    displayed[, .(frequency = .N), by = .(log_bin_start)][, panel_label := "All reads"]
+  ), use.names = TRUE)
+  histogram_data[, panel_label := factor(panel_label, levels = panel_levels)]
+  histogram_data[, `:=`(
+    bin_min_bp = 10^log_bin_start,
+    bin_max_bp = 10^(log_bin_start + LOG_BIN_WIDTH)
+  )]
+
+  group_summary <- reads[, .(
+    reads = .N,
+    median_length_bp = median(read_length_bp),
+    mean_length_bp = mean(read_length_bp),
+    q95_length_bp = as.numeric(quantile(read_length_bp, 0.95)),
+    max_length_bp = max(read_length_bp),
+    display_min_bp = DISPLAY_MIN_BP,
+    display_max_bp = DISPLAY_MAX_BP,
+    reads_below_display_min = sum(read_length_bp < DISPLAY_MIN_BP),
+    reads_above_display_max = sum(read_length_bp > DISPLAY_MAX_BP)
+  ), by = panel_label]
+  group_summary <- rbindlist(list(
+    group_summary,
+    reads[, .(
+      panel_label = "All reads",
+      reads = .N,
+      median_length_bp = median(read_length_bp),
+      mean_length_bp = mean(read_length_bp),
+      q95_length_bp = as.numeric(quantile(read_length_bp, 0.95)),
+      max_length_bp = max(read_length_bp),
+      display_min_bp = DISPLAY_MIN_BP,
+      display_max_bp = DISPLAY_MAX_BP,
+      reads_below_display_min = sum(read_length_bp < DISPLAY_MIN_BP),
+      reads_above_display_max = sum(read_length_bp > DISPLAY_MAX_BP)
+    )]
+  ), use.names = TRUE)
+  group_summary[, `:=`(
+    batch = run_dir,
+    percent_below_display_min = 100 * reads_below_display_min / reads,
+    percent_above_display_max = 100 * reads_above_display_max / reads
+  )]
+  setcolorder(group_summary, c(
+    "batch", "panel_label", "reads", "median_length_bp",
+    "mean_length_bp", "q95_length_bp", "max_length_bp",
+    "display_min_bp", "display_max_bp", "reads_below_display_min",
+    "percent_below_display_min", "reads_above_display_max",
+    "percent_above_display_max"
+  ))
+
+  p <- ggplot(histogram_data) +
+    geom_rect(
+      aes(
+        xmin = bin_min_bp,
+        xmax = bin_max_bp,
+        ymin = 0,
+        ymax = frequency
+      ),
+      fill = "#3977A8",
+      color = NA
+    ) +
+    facet_wrap(vars(panel_label), ncol = 4, scales = "free_y", drop = FALSE) +
+    scale_x_log10(
+      limits = c(DISPLAY_MIN_BP, DISPLAY_MAX_BP),
+      breaks = c(10, 100, 1000, 10000, 100000),
+      labels = c("10 bp", "100 bp", "1 kb", "10 kb", "100 kb"),
+      expand = expansion(mult = 0)
+    ) +
+    scale_y_continuous(labels = scales::label_comma()) +
+    labs(
+      x = "Read length (log10 scale)",
+      y = "Frequency"
+    ) +
+    theme_bw(base_size = 16) +
+    theme(
+      strip.text = element_text(size = 14, face = "bold", lineheight = 1.05),
+      axis.title = element_text(size = 19),
+      axis.text = element_text(size = 14),
+      panel.grid.minor = element_blank(),
+      plot.margin = margin(8, 12, 8, 8)
+    )
+
+  list(plot = p, summary = group_summary)
+}
+```
+
+This report uses the Default Dorado barcode assignments. Each batch is shown as
+six sample-sheet barcodes, one `Unclassified` group, and one `All reads` group.
+Barcode labels combine the original barcode number with its expected genome;
+barcodes for the two blank samples are labeled `blank`. `Unclassified` includes
+both reads without a barcode call and reads assigned to a barcode not present in
+that batch's sample sheet.
+
+Histograms use equal-width 0.05-log10 bins. All panels in all six batches use the
+same log10-scaled 10 bp--100 kb read-length range so that distributions can be
+compared directly. The frequency axis is allowed to vary by barcode panel so
+that distribution shapes remain visible. Reads outside the displayed range are
+retained in the tabulated totals.
+
+```{r distributions, results='asis', fig.width=16, fig.height=9, out.width='100%'}
+all_summaries <- vector("list", length(RUN_DIRS))
+
+for (i in seq_along(RUN_DIRS)) {
+  run_dir <- RUN_DIRS[i]
+  result <- process_batch(run_dir)
+  all_summaries[[i]] <- result$summary
+
+  cat("\n\n## ", unname(PANEL_TITLES[run_dir]), "\n\n", sep = "")
+  print(result$plot)
+
+  ggsave(
+    filename = file.path(
+      PLOT_DIR,
+      paste0("read_length_distribution_", run_dir, ".pdf")
+    ),
+    plot = result$plot,
+    width = 16,
+    height = 9,
+    units = "in",
+    device = cairo_pdf
+  )
+}
+
+summary_table <- rbindlist(all_summaries, use.names = TRUE)
+fwrite(
+  summary_table,
+  file.path(OUTDIR, "read_length_summary_by_batch_and_barcode.tsv"),
+  sep = "\t"
+)
+```
+
+## Reads outside the plotted range
+
+```{r outside-range}
+outside_range <- summary_table[panel_label == "All reads", .(
+  batch,
+  reads_below_10_bp = reads_below_display_min,
+  percent_below_10_bp = percent_below_display_min,
+  reads_above_100_kb = reads_above_display_max,
+  percent_above_100_kb = percent_above_display_max
+)]
+kable(outside_range, digits = 3, format.args = list(big.mark = ","))
+```
+
+## Read-count check
+
+For each batch, the six sample-sheet barcode groups plus `Unclassified` partition
+all reads with a positive Dorado read length. The `All reads` row is the same set
+of reads pooled together and is not an additional category.
+
+```{r count-check}
+count_check <- summary_table[
+  panel_label != "All reads",
+  .(sum_of_seven_groups = sum(reads)),
+  by = batch
+]
+count_check <- merge(
+  count_check,
+  summary_table[panel_label == "All reads", .(batch, all_reads = reads)],
+  by = "batch"
+)
+count_check[, counts_match := sum_of_seven_groups == all_reads]
+kable(count_check, format.args = list(big.mark = ","))
+```

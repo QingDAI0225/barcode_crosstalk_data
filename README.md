@@ -2,63 +2,43 @@
 
 # barcode_crosstalk_data
 
-Analysis code and protocols for the manuscript:
+Analysis code and protocols for:
 
-> Qing Dai, Claudia K. Gunsch, Joshua A. Granek, [*Identification, quantification, and elimination of barcode crosstalk in multiplexed Oxford Nanopore sequencing* (bioRxiv, 2025)](https://doi.org/10.1101/2025.11.19.689316).
+> Qing Dai, Claudia K. Gunsch, Joshua A. Granek, [*Identification, quantification, and elimination of barcode crosstalk in multiplexed Oxford Nanopore sequencing*](https://doi.org/10.1101/2025.11.19.689316).
 
-This repository collects the scripts used to generate the figures and tables in the paper, together with the wet-lab protocols for the post-ligation pooling (PLP) and related library-preparation variants.
+## Analysis notebooks
 
----
+- `dorado_misassignment_analysis.Rmd`: barcode assignment, mapping, performance, and quality-score analyses using the default Dorado barcode setting.
+- `dorado_misassignment_analysis_both_end.Rmd`: the same analyses with `--barcode-both-ends`.
+- `dorado_read_length_distribution.Rmd`: read-length distributions for the six default-setting runs.
 
-## Repository structure
+The notebooks read the six sample sheets from `sample_sheet/`. Set `DORADO_RESULTS_ROOT` to a directory with this layout:
 
-- `protocol/`  
-  Wet-lab protocols used in the study, including post-ligation pooling (PLP) and related SQK-NBD114 high-yield workflows (e.g. PLP high-yield and PLP+SFB variants). These are the versions used to generate the data in the manuscript.
+```text
+<DORADO_RESULTS_ROOT>/<batch>/either_end/merged_bam/sequencing_summary_merged.txt
+<DORADO_RESULTS_ROOT>/<batch>/both_ends/merged_bam/sequencing_summary_merged.txt
+```
 
-- `run_nanoplot_minimap2_samtools.sh`  
-  Bash pipeline for Nanopore read QC and alignment, running on SLURM cluster. It typically:
-  - runs [NanoPlot](https://github.com/wdecoster/NanoPlot) [[1]](#ref-1) on raw reads,
-  - aligns reads to the reference genomes with [Minimap2](https://github.com/lh3/minimap2) [[2]](#ref-2),
-  - computes alignment statistics with [Samtools](https://github.com/samtools/samtools) [[3]](#ref-3),
-  and writes the summary files consumed by the R Markdown notebooks.
+Required R packages are `data.table`, `ggplot2`, `knitr`, `rmarkdown`, and `ragg`.
 
-- `samtools_result_analysis.Rmd`  
-  R Markdown notebook that summarizes Samtools statistics, including:
-  - mapping rates and on-target fractions,
-  - quantification of barcode crosstalk across protocols and input amounts,
-  - protocol-level comparisons that appear as figures/tables in the paper.
- 
-- `minimap_megan_analysis.Rmd`  
-  R Markdown notebook for downstream analyses based on Minimap2-MEGAN outputs, including:
-  - taxonomic profiling visualization of each barcoded sample,
-  - generation of figures and tables used in the main text and supplement.
+Render from the repository root after setting `DORADO_RESULTS_ROOT`:
 
+```bash
+Rscript -e 'rmarkdown::render("dorado_misassignment_analysis.Rmd")'
+Rscript -e 'rmarkdown::render("dorado_misassignment_analysis_both_end.Rmd")'
+Rscript -e 'rmarkdown::render("dorado_read_length_distribution.Rmd")'
+```
 
-## Reference data
+Tabular and figure outputs are written to `dorado_species_qc_out/` and `dorado_read_length_out/`.
 
-- Complexed community taxonomy profiling for Minimap2-MEGAN pipeline
-  - Minimap2 indexed database are downloaded from NCBI nt database (ftp://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nt.gz*)
-  - MEGAN[[4]](#ref-4) database are downloade from [MEGAN6 download website](https://software-ab.cs.uni-tuebingen.de/download/megan6/) (megan-nucl-Feb2022.db.zip).
-  
-- Customized Minimap2 mapping
-  - The four defined ATCC genomes DNA sequences are downloaded from [ATCC official protal](https://github.com/ATCC-Bioinformatics/genome\_portal\_api) [[5]](#ref-5)
-  - ONT DCS sequences are downloaded from [ONT official website](https://a.storyblok.com/f/196663/x/f69b1ef376/dcs\_reference.txt).
-  - PhiX sequences are downloaded from [NCBI Reference Sequence NC_001422.1](https://www.ncbi.nlm.nih.gov/nuccore/9626372)
+## Mapping simulation
 
-## Upstream analysis tools
+`nanosim_mapping/` contains the NanoSim read simulation, observed-length truncation, Dorado mapping, and mapping-confusion summaries. See `nanosim_mapping/README.md` for inputs and commands.
 
-- The pipeline used to run Dorado for basecalling and demultiplexing raw POD5 files is available as a [Github Release](https://github.com/QingDAI0225/dorado_basecalling_with_qscore/releases/tag/v001) and a [Zenodo Archive](https://doi.org/10.5281/zenodo.18942955) of this release.
+## Other files
 
-- Complex community taxonomy profiling ([Minimap2-MEGAN pipeline](https://github.com/QingDAI0225/pacbio-metagenomics-tools) and a [Zenodo Archive](https://doi.org/10.5281/zenodo.17981532))
-  - A minor modified pipeline from [PacBio Minimap-MEGAN pipeline]([https://github.com/lh3/minimap2](https://github.com/QingDAI0225/pacbio-metagenomics-tools/tree/master/Taxonomic-Profiling-Minimap-Megan)) for parallel running on SLURM cluster. The step 6 outputs are used for total reads summary, and step 9 filtered mpa format outputs are used for relative abundance calculation and visualization.
+- `protocol/`: wet-lab protocols used in the study.
+- `run_nanoplot_minimap2_samtools.sh`: NanoPlot, Minimap2, and Samtools workflow.
+- `minimap_megan_analysis.Rmd`: Minimap2-MEGAN taxonomic profiling analysis.
 
-  
-## References
-1. <a id="ref-1"></a> De Coster et al. NanoPack2: population-scale evaluation of long-read sequencing data. *Bioinformatics* **39**, DOI: 10.1093/bioinformatics/btad311 (2023).
-2. <a id="ref-2"></a> Li, H. New strategies to improve minimap2 alignment accuracy. *Bioinformatics* **37**, 4572–4574, DOI: 10.1093/
-bioinformatics/btab705 (2021).
-3. <a id="ref-3"></a> Danecek, P. et al. Twelve years of SAMtools and BCFtools. *GigaScience* **10**, DOI: 10.1093/gigascience/giab008 (2021). *BiologyDirect* **13**, DOI:10.1186/s13062-018-0208-7 (2018).
-4. <a id="ref-4"></a> Daniel H. Huson et al. MEGAN-LR: new algorithms allow accurate binning and easy interactive exploration of metagenomic long reads and contigs.
-5. <a id="ref-5"></a> Nguyen, S. V. et al. The atcc genome portal: 3, 938 authenticated microbial reference genomes. *Microbiol. Resour. Announc.* **13**, DOI: 10.1128/mra.01045-23 (2024).
----
-
+The Dorado basecalling and demultiplexing workflow is available from [dorado_basecalling_with_qscore](https://github.com/QingDAI0225/dorado_basecalling_with_qscore) and [Zenodo](https://doi.org/10.5281/zenodo.18942955).
