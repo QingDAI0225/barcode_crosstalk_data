@@ -833,6 +833,260 @@ p1 <- ggplot(df_summary, aes(x = sample_group, y = mean_mis, fill = method)) +
 p1
 ```
 
+### Figure: Misassigned reads by adapter-ligation context
+
+Each misassigned read is linked to the barcode whose expected genome matches
+the observed alignment. An event is classified as shared-ligation only when
+the destination barcode and that source barcode were combined before adapter
+ligation. Thus, within-protocol events are shared-ligation for Standard and
+SFB, whereas cross-protocol events and all events involving PLP or SFB+PLP are
+distinct-ligation. Rates retain the same batch-by-method mapped-read denominator
+used above. Bars show means across barcode instances and error bars show
+standard errors.
+
+```{r ligation-context-data}
+ligation_levels <- c(
+  "Misassigned reads due to shared ligation environment",
+  "Misassigned reads due to other causes"
+)
+
+source_method_tbl <- unique(core[
+  sample %in% defined_dna_samples,
+  .(
+    experiment_id,
+    source_species = expected_species,
+    source_method = method
+  )
+])
+
+if (source_method_tbl[, anyDuplicated(paste(experiment_id, source_species))] > 0L) {
+  stop("Each target species must have exactly one source barcode per batch.")
+}
+
+misassigned_events <- core[
+  method != "Unknown" &
+    sample %in% c(defined_dna_samples, blank_samples) &
+    observed_species %in% target_species &
+    (
+      (sample %in% defined_dna_samples & observed_species != expected_species) |
+      sample %in% blank_samples
+    ),
+  .N,
+  by = .(
+    experiment_id,
+    method,
+    sample,
+    source_species = observed_species
+  )
+]
+
+misassigned_events <- merge(
+  misassigned_events,
+  source_method_tbl,
+  by = c("experiment_id", "source_species"),
+  all.x = TRUE,
+  sort = FALSE
+)
+
+if (misassigned_events[is.na(source_method), .N] > 0L) {
+  stop("A misassigned read could not be linked to its source barcode method.")
+}
+
+misassigned_events[, ligation_context := fifelse(
+  method %in% c("Standard", "SFB") & method == source_method,
+  ligation_levels[1],
+  ligation_levels[2]
+)]
+
+event_counts <- misassigned_events[
+  , .(misassigned_reads = sum(N)),
+  by = .(experiment_id, method, sample, ligation_context)
+]
+
+ligation_instances <- plot_shared[, .(
+  experiment_id,
+  method = as.character(method),
+  input_ng = as.character(input_ng),
+  sample,
+  expected_species,
+  total_mapped_batch_method
+)]
+
+ligation_by_sample <- ligation_instances[
+  , .(ligation_context = ligation_levels),
+  by = .(
+    experiment_id,
+    method,
+    input_ng,
+    sample,
+    expected_species,
+    total_mapped_batch_method
+  )
+]
+
+ligation_by_sample <- merge(
+  ligation_by_sample,
+  event_counts,
+  by = c("experiment_id", "method", "sample", "ligation_context"),
+  all.x = TRUE,
+  sort = FALSE
+)
+
+ligation_by_sample[is.na(misassigned_reads), misassigned_reads := 0L]
+ligation_by_sample[, misassigned_per_million := fifelse(
+  total_mapped_batch_method > 0,
+  1e6 * misassigned_reads / total_mapped_batch_method,
+  NA_real_
+)]
+ligation_by_sample[, sample_group := fifelse(
+  sample %in% blank_samples,
+  "Water blanks",
+  "Defined DNA"
+)]
+
+setorder(ligation_by_sample, experiment_id, method, sample, ligation_context)
+fwrite(
+  ligation_by_sample,
+  file.path(OUTDIR, "misassigned_per_million_by_ligation_context.tsv"),
+  sep = "\t"
+)
+
+ligation_summary <- ligation_by_sample[
+  , .(
+    mean_misassigned_per_million = mean(misassigned_per_million, na.rm = TRUE),
+    sd_misassigned_per_million = sd(misassigned_per_million, na.rm = TRUE),
+    n_barcode_instances = sum(!is.na(misassigned_per_million))
+  ),
+  by = .(sample_group, method, ligation_context)
+]
+
+ligation_summary[, se_misassigned_per_million :=
+  sd_misassigned_per_million / sqrt(n_barcode_instances)]
+ligation_summary[, method := factor(method, levels = ord)]
+ligation_summary[, sample_group := factor(
+  sample_group,
+  levels = c("Water blanks", "Defined DNA")
+)]
+ligation_summary[, ligation_context := factor(
+  ligation_context,
+  levels = ligation_levels
+)]
+setorder(ligation_summary, sample_group, method, ligation_context)
+
+fwrite(
+  ligation_summary,
+  file.path(OUTDIR, "misassigned_per_million_by_ligation_context_summary.tsv"),
+  sep = "\t"
+)
+```
+
+```{r ligation-context-plot}
+ligation_summary[, method_index := match(as.character(method), ord)]
+ligation_summary[, x_plot := method_index + fifelse(
+  ligation_context == ligation_levels[1],
+  -0.18,
+  0.18
+)]
+ligation_summary[, plot_height := pmax(mean_misassigned_per_million, 1)]
+ligation_summary[, error_min := pmax(
+  mean_misassigned_per_million - se_misassigned_per_million,
+  1
+)]
+ligation_summary[, error_max := pmax(
+  mean_misassigned_per_million + se_misassigned_per_million,
+  1
+)]
+
+n_labels <- unique(ligation_summary[, .(
+  sample_group,
+  method,
+  method_index,
+  n_barcode_instances
+)])
+
+p_ligation <- ggplot(ligation_summary) +
+  geom_rect(
+    aes(
+      xmin = x_plot - 0.16,
+      xmax = x_plot + 0.16,
+      ymin = 1,
+      ymax = plot_height,
+      fill = ligation_context
+    )
+  ) +
+  geom_errorbar(
+    data = ligation_summary[mean_misassigned_per_million > 0],
+    aes(
+      x = x_plot,
+      ymin = error_min,
+      ymax = error_max
+    ),
+    width = 0.10
+  ) +
+  geom_text(
+    data = ligation_summary[mean_misassigned_per_million == 0],
+    aes(x = x_plot, y = 1.15, label = "0"),
+    size = 3.5
+  ) +
+  geom_text(
+    data = n_labels,
+    aes(
+      x = method_index,
+      y = 0.55,
+      label = paste0("n=", n_barcode_instances)
+    ),
+    size = 3.5
+  ) +
+  facet_wrap(~sample_group, nrow = 1) +
+  scale_x_continuous(
+    breaks = seq_along(ord),
+    labels = ord,
+    limits = c(0.5, length(ord) + 0.5)
+  ) +
+  scale_y_log10(
+    breaks = c(1, 10, 100, 1000, 10000),
+    limits = c(0.45, NA),
+    expand = expansion(mult = c(0, 0.08))
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Misassigned reads due to shared ligation environment" = "#F0642F",
+      "Misassigned reads due to other causes" = "#2F78D0"
+    )
+  ) +
+  labs(
+    x = NULL,
+    y = "Misassigned reads per million mapped reads",
+    fill = NULL
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 12),
+    axis.text.x = element_text(size = 11),
+    strip.text = element_text(size = 12),
+    legend.position = "top",
+    panel.grid.minor = element_blank()
+  )
+
+ggsave(
+  file.path(OUTDIR, "plots", "misassigned_by_ligation_context.png"),
+  p_ligation,
+  width = 10,
+  height = 4.8,
+  dpi = 300
+)
+ggsave(
+  file.path(OUTDIR, "plots", "misassigned_by_ligation_context.pdf"),
+  p_ligation,
+  width = 10,
+  height = 4.8
+)
+```
+
+```{r fig.height=4.8,fig.width=10}
+p_ligation
+```
+
 
 ### Quality-score distributions by assignment class
 
